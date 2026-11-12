@@ -6,8 +6,11 @@ import { useAuth } from '../auth/AuthContext';
 
 
 function Login() {
-  const [email, setEmail] = useState('demo@moviehub.test');   // บัญชีทดลองของ mock
-  const [password, setPassword] = useState('1234');
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  // const [email, setEmail] = useState('a@a.com');
+  // const [password, setPassword] = useState('12345678');
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('typing');             // 'typing' | 'submitting'
   // TODO ขั้นที่ 2: const { login } = useAuth();  และ  const navigate = useNavigate();
@@ -42,7 +45,7 @@ function Login() {
   return (
     <div className="mx-auto max-w-sm px-4 py-12">
       <h1 className="text-2xl font-semibold text-slate-900">เข้าสู่ระบบ</h1>
-      <p className="mt-1 text-sm text-slate-500">ทดลองด้วย demo@moviehub.test / 1234 หรือสมัครใหม่</p>
+           <p className="mt-1 text-sm text-slate-500">เข้าสู่ระบบเพื่อใช้รายการโปรด โหวต และรีวิว หรือสมัครใหม่</p>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-3">
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="อีเมล" required
