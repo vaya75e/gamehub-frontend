@@ -1,104 +1,57 @@
-// import { useState } from 'react';
-// import { movies as localMovies } from '../data/data';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import FeaturedCarousel from '../components/FeaturedCarousel';
-// TODO ขั้นที่ 5: import { useEffect } from 'react' และ import { getMovies } from '../api/tmdb'
-import { useEffect, useState } from 'react';
-// import { getMovies } from '../api/tmdb';
-import { getMovies } from '../api/backend';
-
-const STEPS = [
-  { n: 1, file: 'src/api/tmdb.js', what: 'เขียนส่วน fetch ใน getJSON' },
-  { n: 2, file: 'src/api/tmdb.js', what: 'เขียน toMovie แปลง JSON ของ TMDB' },
-  { n: 3, file: 'src/pages/Movies.jsx', what: 'useEffect โหลดหนังจาก API (วันละครั้ง) แล้วกรองในเครื่อง' },
-  { n: 4, file: 'src/pages/MovieDetail.jsx', what: 'โหลดรายละเอียดตาม id' },
-  { n: 5, file: 'src/pages/Home.jsx', what: 'หนังแนะนำสุ่มจากข้อมูล API ชุดเดียวกัน' },
-  { n: 6, file: 'docs/api-wishlist.md', what: 'กรอกรายการ API ที่จะขอจากทีม Backend' },
-];
-
-// สลับลำดับแบบสุ่มบนสำเนา ไม่แตะ array เดิม
-function shuffle(list) {
-  const copy = [...list];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
+import GameGrid from '../components/GameGrid';
+import { getGames } from '../api/backend';
 
 function Home() {
-  // สุ่มครั้งเดียวตอน component เกิด แล้วจำไว้ใน state (กดเลื่อนแล้วลำดับไม่เปลี่ยน)
-  // TODO ขั้นที่ 5: เปลี่ยนเป็น useState([]) แล้วใช้ useEffect เรียก getMovies() แล้ว setPicks(shuffle(list))
-  // const [picks, setPicks] = useState(() => shuffle(localMovies));
-  const [picks, setPicks] = useState([]);   // เริ่มว่าง รอข้อมูลจาก API แล้วค่อยสุ่ม
+  const [games, setGames] = useState([]);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // ใช้ getMovies() ตัวเดียวกับหน้า Movies ถ้าวันนี้เคยโหลดแล้วจะได้จาก localStorage ทันที
   useEffect(() => {
     let ignore = false;
-    getMovies()
-      .then(list => { if (!ignore) setPicks(shuffle(list)); })
-      .catch(() => { if (!ignore) setPicks([]); });   // พลาดก็แค่ไม่มีหนังแนะนำ หน้าแรกไม่ควรพัง
+    async function load() {
+      setStatus('loading');
+      try {
+        const list = await getGames();
+        if (!ignore) { setGames(list); setStatus('success'); }
+      } catch (err) {
+        if (!ignore) { setError(err); setStatus('error'); }
+      }
+    }
+    load();
     return () => { ignore = true; };
-  }, []);
+  }, [reloadKey]);
+
+  // เกมใหม่ล่าสุด: API เรียงใหม่ก่อนเมื่อไม่มีโหวต แต่เราเรียงตามเลข id มาก -> น้อย ให้ชัดเจน
+  const newest = [...games].sort((a, b) => b.id - a.id).slice(0, 4);
+  // เกมยอดนิยม: คะแนนสูงก่อน
+  const popular = [...games].sort((a, b) => b.rating - a.rating).slice(0, 4);
+  const featured = popular.slice(0, 3);
+
+  const retry = () => setReloadKey(k => k + 1);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 md:px-6">
-      {/* Hero */}
-      <section className="py-14 md:py-20">
-        <p className="text-sm font-medium text-emerald-600">สัปดาห์นี้: Fetch / JSON / API</p>
-        <h1 className="mt-2 max-w-2xl text-3xl font-semibold tracking-tight text-slate-900 md:text-5xl">
-          หนังน่าดู รวมไว้ที่เดียว
-        </h1>
-        <p className="mt-4 max-w-xl text-slate-600">
-          ตอนนี้ MovieHub ยังมีหนังแค่ 10 เรื่องจากไฟล์ data.js
-          วันนี้เราจะเชื่อมกับ TMDB ให้ได้หนังที่กำลังฉายจริง และเตรียมต่อกับ Backend ของทีม
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link to="/movies" className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600">
-            ดูหนังทั้งหมด
-          </Link>
-          <Link to="/lab" className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50">
-            ทดลองยิง API
-          </Link>
-        </div>
-      </section>
+    <div>
+      <FeaturedCarousel games={featured} />
 
-      {/* Featured */}
-      <section>
-        <div className="mb-4 flex items-end justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">หนังแนะนำ</h2>
-            <p className="text-sm text-slate-500">สุ่มลำดับใหม่ทุกครั้งที่เปิดหน้า แหล่งข้อมูล: data.js</p>
-          </div>
-          <button onClick={() => setPicks(shuffle(picks))} className="text-sm text-emerald-600 hover:underline">
-            สุ่มใหม่
-          </button>
+      <div className="mx-auto max-w-5xl px-4 py-10 md:px-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-slate-900">เกมใหม่ล่าสุด</h2>
+          <Link to="/games" className="text-sm text-sky-600 hover:underline">ดูทั้งหมด →</Link>
         </div>
-        <FeaturedCarousel movies={picks} />
-      </section>
+        <GameGrid games={newest} status={status} error={error} onRetry={retry} />
 
-      {/* Roadmap */}
-      <section className="mt-16">
-        <h2 className="text-xl font-semibold text-slate-900">แผนที่ของโปรเจกต์นี้</h2>
-        <p className="text-sm text-slate-500">หน้าตาเสร็จแล้ว เหลือเติมส่วนที่คุยกับ API ทีละขั้น</p>
-        <ol className="mt-4 divide-y divide-emerald-100 rounded-xl border border-emerald-100 bg-white">
-          {STEPS.map(s => (
-            <li key={s.n} className="flex items-center gap-4 px-4 py-3">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-50 text-sm font-medium text-emerald-700">{s.n}</span>
-              <div className="min-w-0">
-                <p className="text-sm text-slate-900">{s.what}</p>
-                <code className="text-xs text-slate-400">{s.file}</code>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
+        <div className="mb-4 mt-12 flex items-center justify-between">
+          <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-slate-900">เกมยอดนิยม</h2>
+          <Link to="/games" className="text-sm text-sky-600 hover:underline">ดูทั้งหมด →</Link>
+        </div>
+        <GameGrid games={popular} status={status} error={error} onRetry={retry} />
+      </div>
     </div>
   );
 }
 
 export default Home;
-
-//เป็นโครงเดิมของหน้า Home.jsx ที่มีการปรับปรุงให้สามารถดึงข้อมูลหนังจาก API ของ TMDB และแสดงผลในรูปแบบของ Carousel โดยมีการใช้ useEffect เพื่อโหลดข้อมูลเมื่อ component ถูก mount และใช้ useState เพื่อจัดการกับ state ของ picks (รายการหนังที่แนะนำ)
-// ดีกว่าที่สิ่งที่ปิดไว้คือการใช้ข้อมูลจากไฟล์ data.js โดยตรง ซึ่งจะทำให้สามารถแสดงผลหนังที่กำลังฉายในประเทศไทยได้อย่างถูกต้องและเป็นปัจจุบัน
-// ตรงที่ใช้สุ่มลำดับหนังคือการใช้ฟังก์ชัน shuffle เพื่อให้ผู้ใช้สามารถเห็นหนังแนะนำในลำดับที่แตกต่างกันทุกครั้งที่เข้ามาที่หน้า Home 

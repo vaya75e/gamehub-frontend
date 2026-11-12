@@ -1,36 +1,41 @@
-import { useState } from 'react';
-import MovieCard from './MovieCard';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
-const PER_PAGE = 4;
+function FeaturedCarousel({ games = [] }) {
+  const [i, setI] = useState(0);
 
-// แถบหนังแนะนำแบบเลื่อนซ้ายขวา รับ movies ที่สลับลำดับมาแล้วจากแม่ ตัวเองจำแค่ว่าอยู่ชุดที่เท่าไร
-function FeaturedCarousel({ movies }) {
-  const [page, setPage] = useState(0);
-  const total = Math.ceil(movies.length / PER_PAGE);   // จำนวนชุด เช่น 10 เรื่อง = 3 ชุด
+  useEffect(() => {
+    if (games.length < 2) return;
+    const t = setInterval(() => setI(n => (n + 1) % games.length), 5000);
+    return () => clearInterval(t);
+  }, [games.length]);
 
-  if (movies.length === 0) {
-    return <p className="py-10 text-center text-slate-400">ยังไม่มีหนังแนะนำ</p>;
-  }
-
-  const shown = movies.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
-  const prev = () => setPage(p => (p - 1 + total) % total);   // ถอยจากชุดแรกวนไปชุดสุดท้าย
-  const next = () => setPage(p => (p + 1) % total);           // เดินจากชุดสุดท้ายวนกลับชุดแรก
+  if (games.length === 0) return null;
+  const g = games[i % games.length];
 
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {shown.map(m => <MovieCard key={m.id} movie={m} />)}
+    <section className="relative overflow-hidden bg-slate-900">
+      {g.image && (
+        <img src={g.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30" />
+      )}
+      <div className="relative mx-auto max-w-5xl px-4 py-16 md:px-6 md:py-24">
+        <span className="rounded-full bg-sky-500 px-3 py-1 text-xs font-semibold text-white">FEATURED GAME</span>
+        <h1 className="mt-4 text-4xl font-extrabold text-white md:text-6xl">{g.title}</h1>
+        <p className="mt-3 max-w-xl text-slate-300">
+          {g.genre ?? ''} {g.players ? `| ${g.players} ผู้เล่น` : ''}
+        </p>
+        <Link to={`/games/${g.id}`}
+              className="mt-6 inline-block rounded-lg bg-sky-500 px-5 py-2 font-medium text-white hover:bg-sky-600">
+          ดูรายละเอียด →
+        </Link>
+        <div className="mt-8 flex gap-2">
+          {games.map((_, n) => (
+            <button key={n} onClick={() => setI(n)} aria-label={`สไลด์ ${n + 1}`}
+                    className={'h-2 rounded-full transition-all ' + (n === i % games.length ? 'w-6 bg-sky-500' : 'w-2 bg-slate-500')} />
+          ))}
+        </div>
       </div>
-      <div className="mt-4 flex items-center justify-center gap-4 text-sm text-slate-500">
-        <button onClick={prev} className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">
-          ก่อนหน้า
-        </button>
-        <span>ชุดที่ {page + 1} จาก {total}</span>
-        <button onClick={next} className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">
-          ถัดไป
-        </button>
-      </div>
-    </div>
+    </section>
   );
 }
 
