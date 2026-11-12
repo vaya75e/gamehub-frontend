@@ -18,9 +18,14 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    const data = await api.login(email, password);
-    remember(data);
-  }
+  const data = await api.login(email, password);
+
+  console.log('ข้อมูลที่ Backend ส่งกลับ:', data);
+
+  remember(data);
+
+  console.log('Token ที่บันทึก:', localStorage.getItem(TOKEN_KEY));
+}
 
   async function register(email, password, displayName) {
     await api.register(email, password, displayName);
@@ -41,10 +46,14 @@ export function AuthProvider({ children }) {
   }
 
   const value = {
-    token, member,
+    token,
+    member,
     isLoggedIn: Boolean(token),
     isAdmin: member?.role === 'admin',
-    login, register, logout, updateMember,
+    login,
+    register,
+    logout,
+    updateMember,
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

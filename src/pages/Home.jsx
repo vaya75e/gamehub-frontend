@@ -1,56 +1,184 @@
-import { useEffect, useState } from 'react';
+
 import { Link } from 'react-router-dom';
-import FeaturedCarousel from '../components/FeaturedCarousel';
-import GameGrid from '../components/GameGrid';
-import { getGames } from '../api/backend';
+import { games } from '../data/data';
+
+// แปลงราคาเกม
+function getPrice(game) {
+  if (!game.downloadLinks?.length) return 'ไม่ระบุราคา';
+
+  const prices = game.downloadLinks
+    .map((item) => item.price)
+    .filter((price) => typeof price === 'number');
+
+  if (prices.length === 0) return 'ไม่ระบุราคา';
+
+  const minPrice = Math.min(...prices);
+
+  return minPrice === 0
+    ? 'ฟรี'
+    : `฿${minPrice.toLocaleString()}`;
+}
+
+// Component การ์ดเกม
+function GameCard({ game, isNew = false }) {
+  return (
+    <Link
+      to={`/games/${game.id}`}
+      className="group overflow-hidden rounded-xl border border-gray-800 bg-[#1a2330] transition duration-300 hover:-translate-y-1 hover:border-blue-500"
+    >
+      <div className="relative overflow-hidden">
+        <img
+          src={game.images?.cover}
+          alt={game.title}
+          className="aspect-[4/3] w-full object-cover transition duration-500 group-hover:scale-105"
+        />
+
+        {isNew && (
+          <span className="absolute left-3 top-3 rounded-full bg-blue-500 px-3 py-1 text-xs font-bold text-white">
+            ใหม่
+          </span>
+        )}
+      </div>
+
+      <div className="p-3">
+        <h3 className="truncate font-semibold text-white">
+          {game.title}
+        </h3>
+
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-200">
+            {getPrice(game)}
+          </span>
+
+          <span className="text-xl text-gray-300">
+            ♡
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// Component หัวข้อ
+function SectionTitle({ title }) {
+  return (
+    <div className="mb-5 flex items-center justify-between">
+      <h2 className="border-l-4 border-blue-500 pl-3 text-xl font-bold text-white md:text-2xl">
+        {title}
+      </h2>
+
+      <Link
+        to="/games"
+        className="text-sm text-blue-400 hover:text-blue-300"
+      >
+        ดูทั้งหมด →
+      </Link>
+    </div>
+  );
+}
 
 function Home() {
-  const [games, setGames] = useState([]);
-  const [status, setStatus] = useState('loading');
-  const [error, setError] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    let ignore = false;
-    async function load() {
-      setStatus('loading');
-      try {
-        const list = await getGames();
-        if (!ignore) { setGames(list); setStatus('success'); }
-      } catch (err) {
-        if (!ignore) { setError(err); setStatus('error'); }
-      }
-    }
-    load();
-    return () => { ignore = true; };
-  }, [reloadKey]);
+  // เกมเด่น
+  const featured = games.find((game) => game.isFeatured);
 
-  // เกมใหม่ล่าสุด: API เรียงใหม่ก่อนเมื่อไม่มีโหวต แต่เราเรียงตามเลข id มาก -> น้อย ให้ชัดเจน
-  const newest = [...games].sort((a, b) => b.id - a.id).slice(0, 4);
-  // เกมยอดนิยม: คะแนนสูงก่อน
-  const popular = [...games].sort((a, b) => b.rating - a.rating).slice(0, 4);
-  const featured = popular.slice(0, 3);
+  // เกมใหม่ล่าสุด
+  const newest = games.filter((game) => game.isNew);
 
-  const retry = () => setReloadKey(k => k + 1);
+  // เกมยอดนิยม
+  const popular = games.filter((game) => game.isPopular);
+
+  if (!featured) {
+    return (
+      <div className="min-h-screen bg-[#0b111b] p-10 text-center text-white">
+        ยังไม่มีข้อมูลเกม
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <FeaturedCarousel games={featured} />
+    <main className="min-h-screen bg-[#0b111b] text-white">
 
-      <div className="mx-auto max-w-5xl px-4 py-10 md:px-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-slate-900">เกมใหม่ล่าสุด</h2>
-          <Link to="/games" className="text-sm text-sky-600 hover:underline">ดูทั้งหมด →</Link>
-        </div>
-        <GameGrid games={newest} status={status} error={error} onRetry={retry} />
+      {/* Featured Game */}
+      <section className="relative flex min-h-[420px] items-center overflow-hidden">
 
-        <div className="mb-4 mt-12 flex items-center justify-between">
-          <h2 className="border-l-4 border-sky-500 pl-3 text-xl font-semibold text-slate-900">เกมยอดนิยม</h2>
-          <Link to="/games" className="text-sm text-sky-600 hover:underline">ดูทั้งหมด →</Link>
+        <img
+          src={featured.images?.gallery?.[0] || featured.images?.cover}
+          alt={featured.title}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0b111b] via-[#0b111b]/80 to-transparent" />
+
+        <div className="relative z-10 mx-auto w-full max-w-7xl px-6 py-16 md:px-10">
+
+          <div className="max-w-xl">
+
+            <span className="rounded-full bg-blue-600 px-4 py-2 text-xs font-bold">
+              FEATURED GAME
+            </span>
+
+            <h1 className="mt-5 text-4xl font-extrabold md:text-6xl">
+              {featured.title}
+            </h1>
+
+            <p className="mt-4 line-clamp-3 text-gray-300 md:text-lg">
+              {featured.description}
+            </p>
+
+            <Link
+              to={`/games/${featured.id}`}
+              className="mt-7 inline-flex items-center gap-2 rounded-full bg-blue-500 px-7 py-3 font-semibold transition hover:bg-blue-400"
+            >
+              ดูรายละเอียด →
+            </Link>
+
+          </div>
         </div>
-        <GameGrid games={popular} status={status} error={error} onRetry={retry} />
+      </section>
+
+      {/* Game Sections */}
+      <div className="mx-auto max-w-7xl space-y-14 px-5 py-12 md:px-10">
+
+        {/* เกมใหม่ล่าสุด */}
+        <section>
+          <SectionTitle title="เกมใหม่ล่าสุด" />
+
+          {newest.length > 0 ? (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {newest.map((game) => (
+                <GameCard
+                  key={game.id}
+                  game={game}
+                  isNew={true}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400">ยังไม่มีเกมใหม่</p>
+          )}
+        </section>
+
+        {/* เกมยอดนิยม */}
+        <section>
+          <SectionTitle title="เกมยอดนิยม" />
+
+          {popular.length > 0 ? (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {popular.map((game) => (
+                <GameCard
+                  key={game.id}
+                  game={game}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400">ยังไม่มีเกมยอดนิยม</p>
+          )}
+        </section>
+
       </div>
-    </div>
+    </main>
   );
 }
 

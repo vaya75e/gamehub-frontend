@@ -1,120 +1,479 @@
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+
+import { useAuth } from '../auth/AuthContext';
+import { useState, useRef, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { games } from '../data/data';
 import ReviewForm from '../components/ReviewForm';
 import ReviewList from '../components/ReviewList';
-import GameActions from '../components/GameActions';
-import { priceText } from '../components/GameCard';
-import { getGame, getReviews, postReview } from '../api/backend';
-import { useAuth } from '../auth/AuthContext';
+
+// แปลงราคาเกม
+function getPrice(game) {
+  const prices = game.downloadLinks
+    ?.map((item) => item.price)
+    .filter((price) => typeof price === 'number');
+
+  if (!prices?.length) return 'ไม่ระบุราคา';
+
+  const minPrice = Math.min(...prices);
+
+  return minPrice === 0
+    ? 'ฟรี'
+    : `฿${minPrice.toLocaleString()}`;
+}
 
 function GameDetail() {
   const { id } = useParams();
-  const [game, setGame] = useState(null);
-  const [status, setStatus] = useState('loading');
-  const [error, setError] = useState(null);
+  const game = games.find((item) => item.id === id);
+
+  const { isLoggedIn, member } = useAuth();
+  const navigate = useNavigate();
+
+  // รูปภาพ
+  const [activeImageIndex, setActiveImageIndex] = useState(-1);
+  const [galleryPage, setGalleryPage] = useState(0);
+
+  const galleryRef = useRef(null);
+  const galleryImages = game?.images?.gallery || [];
+  const totalPages = Math.ceil((galleryImages.length + 1) / 3);
+
+  // รีวิวชั่วคราวใน Frontend
   const [reviews, setReviews] = useState([]);
-  const { token, member, isLoggedIn } = useAuth();
 
-  useEffect(() => {
-    let ignore = false;
-    async function load() {
-      setStatus('loading');
-      try {
-        const g = await getGame(id);
-        if (!ignore) { setGame(g); setStatus('success'); }
-      } catch (err) {
-        if (!ignore) { setError(err); setStatus('error'); }
-      }
+  // คำนวณคะแนนเฉลี่ย
+  const averageRating = reviews.length > 0
+    ? (
+        reviews.reduce((total, review) => total + review.score, 0) /
+        reviews.length
+      ).toFixed(1)
+    : '0.0';
+
+  // จำนวนรีวิว
+  const reviewCount = reviews.length;
+
+  // เพิ่มรีวิว
+  async function handleAddReview(text, score) {
+    if (!isLoggedIn) {
+      throw new Error('กรุณาเข้าสู่ระบบก่อนเขียนรีวิว');
     }
-    load();
-    return () => { ignore = true; };
-  }, [id]);
 
-  // รีวิวแยก effect: ถ้ารีวิวล่ม หน้าเกมยังดูได้
-  useEffect(() => {
-    let ignore = false;
-    getReviews(id)
-      .then(items => { if (!ignore) setReviews(items); })
-      .catch(() => { if (!ignore) setReviews([]); });
-    return () => { ignore = true; };
-  }, [id]);
+    const newReview = {
+      id: Date.now(),
+      member: {
+        displayName: member?.displayName || 'สมาชิก',
+      },
+      score,
+      text,
+      createdAt: new Date().toISOString(),
+    };
 
-  async function handleReviewSubmit(text) {
-    const saved = await postReview(id, text, token);
-    // 1 คนรีวิวได้ 1 ครั้ง: เขียนซ้ำ = แก้ของเดิม จึงเอาของเก่าของเราออกก่อน
-    setReviews([saved, ...reviews.filter(r => r.memberId !== member.id)]);
+    setReviews((prev) => [newReview, ...prev]);
   }
 
-  // หลังโหวต ดึงคะแนนเฉลี่ยใหม่มาแสดง
-  function handleVoted(res) {
-    setGame(g => ({ ...g, rating: res.voteAverage }));
-  }
+  // รายการโปรด
+  const [favoriteIds, setFavoriteIds] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem('gamehub.favorites') || '[]'
+      );
+    } catch {
+      return [];
+    }
+  });
 
-  if (status === 'loading') {
-    return <div className="mx-auto max-w-4xl px-4 py-10 text-slate-400">กำลังโหลด...</div>;
-  }
+  const isFavorite = favoriteIds.includes(game?.id);
 
-  if (status === 'error') {
-    return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center">
-        <p className="text-lg text-slate-700">ไม่พบเกมนี้ 😢</p>
-        <p className="text-sm text-slate-400">{error.message}</p>
-        <Link to="/games" className="mt-6 inline-block text-sm text-sky-600 hover:underline">กลับไปหน้าเกมทั้งหมด</Link>
-      </div>
+  // เพิ่ม / ลบรายการโปรด
+  function toggleFavorite() {
+    // ถ้ายังไม่ได้เข้าสู่ระบบ ให้ไปหน้า Login
+    if (!isLoggedIn) {
+      navigate('/login');
+      return;
+    }
+
+    const updated = isFavorite
+      ? favoriteIds.filter((id) => id !== game.id)
+      : [...favoriteIds, game.id];
+
+    setFavoriteIds(updated);
+    localStorage.setItem(
+      'gamehub.favorites',
+      JSON.stringify(updated)
     );
   }
 
+  // เลื่อนแถบรูปภาพ
+  function scrollGallery(direction) {
+    const gallery = galleryRef.current;
+    if (!gallery) return;
+
+    gallery.scrollBy({
+      left: direction * gallery.clientWidth,
+      behavior: 'smooth',
+    });
+  }
+
+  // ตรวจจับตำแหน่งการเลื่อน
+  useEffect(() => {
+    const gallery = galleryRef.current;
+    if (!gallery) return;
+
+    function handleScroll() {
+      const page = Math.round(
+        gallery.scrollLeft / gallery.clientWidth
+      );
+
+      setGalleryPage(
+        Math.min(Math.max(page, 0), totalPages - 1)
+      );
+    }
+
+    gallery.addEventListener('scroll', handleScroll);
+
+    return () => {
+      gallery.removeEventListener('scroll', handleScroll);
+    };
+  }, [totalPages]);
+
+  // ถ้าไม่พบเกม
+  if (!game) {
+    return (
+      <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
+        <h1 className="text-2xl font-bold">
+          ไม่พบเกมนี้ 😢
+        </h1>
+
+        <p className="mt-3 text-slate-400">
+          ขออภัย ไม่พบข้อมูลเกมที่คุณต้องการ
+        </p>
+
+        <Link
+          to="/games"
+          className="mt-6 inline-block rounded-full bg-sky-500 px-6 py-3 font-semibold text-white hover:bg-sky-400"
+        >
+          กลับไปหน้าเกมทั้งหมด
+        </Link>
+      </main>
+    );
+  }
+
+  // รูปที่จะแสดงในพื้นที่รูปใหญ่
+  const activeImage =
+    activeImageIndex === -1
+      ? game.images?.cover
+      : galleryImages[activeImageIndex];
+
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 md:px-6">
-      <Link to="/games" className="text-sm text-slate-500 hover:text-sky-600">← กลับไปหน้าเกมทั้งหมด</Link>
+    <main className="min-h-screen bg-[#0b111b] text-white">
+      <div className="mx-auto max-w-7xl px-5 py-10 md:px-10">
 
-      <div className="mt-4 flex flex-col gap-8 md:flex-row">
-        {game.image ? (
-          <img src={game.image} alt={`รูปเกม ${game.title}`}
-               className="w-48 shrink-0 self-start rounded-xl border border-slate-200" />
-        ) : (
-          <div className="grid aspect-[2/3] w-48 shrink-0 place-items-center rounded-xl bg-slate-100 text-5xl">🎮</div>
-        )}
+        <Link
+          to="/games"
+          className="text-sm text-slate-400 transition hover:text-sky-400"
+        >
+          ← กลับไปหน้าเกมทั้งหมด
+        </Link>
 
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">{game.title}</h1>
-          <p className="mt-2 text-xl font-bold text-sky-600">{priceText(game.price)}</p>
+        <div className="mt-6 grid gap-8 md:grid-cols-[1fr_1.2fr]">
 
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm text-slate-600">
-            <dt className="text-slate-400">แนวเกม</dt><dd>{game.genre ?? '-'}</dd>
-            <dt className="text-slate-400">จำนวนผู้เล่น</dt><dd>{game.players ?? '-'}</dd>
-            <dt className="text-slate-400">แพลตฟอร์ม</dt><dd>{game.platform ?? '-'}</dd>
-            <dt className="text-slate-400">คะแนนสมาชิก</dt><dd>{game.rating > 0 ? `⭐ ${game.rating}` : 'ยังไม่มีคะแนน'}</dd>
-          </dl>
+          {/* รูปเกม */}
+          <div>
+            <div className="overflow-hidden rounded-2xl border border-slate-700 bg-[#1a2330] shadow-xl">
+              <img
+                src={activeImage || game.images?.cover}
+                alt={game.title}
+                className="aspect-video w-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = game.images?.cover || '';
+                }}
+              />
+            </div>
 
-          <p className="mt-4 leading-relaxed text-slate-700">{game.description}</p>
+            {/* รูปภาพเพิ่มเติม */}
+            {galleryImages.length > 0 && (
+              <div className="mt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-white">
+                    ภาพเพิ่มเติม
+                  </h2>
 
-          {game.downloadUrl && (
-            <a href={game.downloadUrl} target="_blank" rel="noopener noreferrer"
-               className="mt-5 inline-block rounded-lg bg-sky-500 px-5 py-2 font-medium text-white hover:bg-sky-600">
-              ดาวน์โหลด / ซื้อเกม ({game.platform ?? 'ลิงก์'})
-            </a>
-          )}
+                  <span className="text-xs text-slate-400">
+                    {galleryImages.length + 1} รูป
+                  </span>
+                </div>
 
-          <GameActions gameId={game.id} onVoted={handleVoted} />
+                <div className="flex items-center gap-2">
 
-          <div className="mt-8">
-            <h2 className="mb-3 text-lg font-semibold text-slate-900">รีวิวจากสมาชิก ({reviews.length})</h2>
+                  <button
+                    type="button"
+                    onClick={() => scrollGallery(-1)}
+                    disabled={galleryPage === 0}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-2xl text-white transition hover:border-sky-400 hover:bg-sky-500 disabled:opacity-30"
+                  >
+                    ‹
+                  </button>
+
+                  <div
+                    ref={galleryRef}
+                    className="flex min-w-0 flex-1 gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory"
+                    style={{ scrollbarWidth: 'none' }}
+                  >
+                    {/* รูปปก */}
+                    <button
+                      type="button"
+                      onClick={() => setActiveImageIndex(-1)}
+                      className={`w-[calc((100%-24px)/3)] shrink-0 snap-start overflow-hidden rounded-xl border-2 transition ${
+                        activeImageIndex === -1
+                          ? 'border-sky-400 shadow-lg shadow-sky-500/20'
+                          : 'border-white/10 hover:border-sky-400'
+                      }`}
+                    >
+                      <img
+                        src={game.images?.cover}
+                        alt="รูปปกเกม"
+                        className="aspect-video w-full object-cover"
+                      />
+                    </button>
+
+                    {/* รูปเพิ่มเติม */}
+                    {galleryImages.map((image, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setActiveImageIndex(index)}
+                        className={`w-[calc((100%-24px)/3)] shrink-0 snap-start overflow-hidden rounded-xl border-2 transition ${
+                          activeImageIndex === index
+                            ? 'border-sky-400 shadow-lg shadow-sky-500/20'
+                            : 'border-white/10 hover:border-sky-400'
+                        }`}
+                      >
+                        <img
+                          src={image}
+                          alt={`ภาพที่ ${index + 1}`}
+                          className="aspect-video w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => scrollGallery(1)}
+                    disabled={galleryPage >= totalPages - 1}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-2xl text-white transition hover:border-sky-400 hover:bg-sky-500 disabled:opacity-30"
+                  >
+                    ›
+                  </button>
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="mt-4 flex justify-center gap-2">
+                    {Array.from({ length: totalPages }).map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          galleryRef.current?.scrollTo({
+                            left: index * galleryRef.current.clientWidth,
+                            behavior: 'smooth',
+                          });
+                        }}
+                        className={`h-1.5 rounded-full transition-all ${
+                          galleryPage === index
+                            ? 'w-7 bg-sky-400'
+                            : 'w-2 bg-slate-600 hover:bg-slate-400'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* รายละเอียดเกม */}
+          <div>
+            <div className="flex flex-wrap gap-2">
+              {game.isNew && (
+                <span className="rounded-full bg-sky-500/20 px-3 py-1 text-xs font-semibold text-sky-400">
+                  NEW
+                </span>
+              )}
+
+              {game.isPopular && (
+                <span className="rounded-full bg-purple-500/20 px-3 py-1 text-xs font-semibold text-purple-400">
+                  POPULAR
+                </span>
+              )}
+            </div>
+
+            <h1 className="mt-4 text-3xl font-extrabold md:text-5xl">
+              {game.title}
+            </h1>
+
+            <p className="mt-4 text-2xl font-bold text-sky-400">
+              {getPrice(game)}
+            </p>
+
+            {/* ข้อมูลพื้นฐาน */}
+            <div className="mt-6 rounded-xl border border-slate-700 bg-[#1a2330] p-5">
+              <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-4 text-sm">
+
+                <dt className="text-slate-400">แนวเกม</dt>
+                <dd className="flex flex-wrap gap-2">
+                  {game.genre?.length > 0
+                    ? game.genre.map((item) => (
+                        <span
+                          key={item}
+                          className="rounded-full bg-slate-700 px-3 py-1 text-slate-200"
+                        >
+                          {item}
+                        </span>
+                      ))
+                    : '-'}
+                </dd>
+
+                <dt className="text-slate-400">จำนวนผู้เล่น</dt>
+                <dd>{game.players || '-'}</dd>
+
+                <dt className="text-slate-400">รูปแบบการเล่น</dt>
+                <dd>{game.type_player?.join(', ') || '-'}</dd>
+
+              </dl>
+            </div>
+
+            {/* คำอธิบาย */}
+            <section className="mt-7">
+              <h2 className="text-xl font-bold">
+                เกี่ยวกับเกม
+              </h2>
+
+              <p className="mt-3 leading-8 text-slate-300">
+                {game.description || 'ยังไม่มีรายละเอียดเกม'}
+              </p>
+            </section>
+
+            {/* ปุ่มรายการโปรด */}
+            <button
+              type="button"
+              onClick={toggleFavorite}
+              className={`mt-6 flex items-center gap-2 rounded-xl border px-5 py-3 font-semibold transition ${
+                isFavorite
+                  ? 'border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                  : 'border-slate-600 bg-[#1a2330] text-white hover:border-red-400 hover:text-red-400'
+              }`}
+            >
+              <span className="text-xl">
+                {isFavorite ? '♥' : '♡'}
+              </span>
+              {isFavorite ? 'อยู่ในรายการโปรดแล้ว' : 'เพิ่มในรายการโปรด'}
+            </button>
+
+            {/* ช่องทางซื้อเกม */}
+            <section className="mt-8">
+              <h2 className="mb-4 text-xl font-bold">
+                ช่องทางซื้อเกม
+              </h2>
+
+              <div className="space-y-3">
+                {game.downloadLinks?.map((item, index) => (
+                  <a
+                    key={index}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between rounded-xl border border-slate-700 bg-[#1a2330] p-4 transition hover:border-sky-500"
+                  >
+                    <div>
+                      <p className="font-semibold text-white">
+                        {item.platform}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-400">
+                        {item.price === 0
+                          ? 'ฟรี'
+                          : `฿${Number(item.price).toLocaleString()}`}
+                      </p>
+                    </div>
+
+                    <span className="text-sky-400">
+                      ไปยังร้านค้า →
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        {/* รีวิวเกม */}
+        <section className="mt-16 border-t border-slate-700 pt-10">
+
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold">
+                รีวิวจากผู้เล่น
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">
+                แบ่งปันความคิดเห็นเกี่ยวกับเกมนี้
+              </p>
+            </div>
+
+            {/* คะแนนเฉลี่ย */}
+            <div className="rounded-xl border border-slate-700 bg-[#1a2330] px-6 py-4 text-center">
+              <p className="text-3xl font-bold text-sky-400">
+                {averageRating}
+                <span className="ml-1 text-lg text-yellow-400">★</span>
+              </p>
+
+              <p className="mt-1 text-xs text-slate-400">
+                จาก {reviewCount} รีวิว
+              </p>
+            </div>
+          </div>
+
+          {/* ฟอร์มเขียนรีวิว */}
+          <div className="mb-10 rounded-2xl border border-slate-700 bg-[#1a2330] p-5 md:p-7">
+
+            {isLoggedIn ? (
+              <ReviewForm
+                gameTitle={game.title}
+                onSubmit={handleAddReview}
+              />
+            ) : (
+              <div className="py-5 text-center">
+                <div className="mb-3 text-4xl">🔒</div>
+
+                <h3 className="text-lg font-bold text-white">
+                  เข้าสู่ระบบก่อนเขียนรีวิว
+                </h3>
+
+                <p className="mt-2 text-sm text-slate-400">
+                  คุณต้องเข้าสู่ระบบก่อน จึงจะสามารถรีวิวและให้คะแนนเกมนี้ได้
+                </p>
+
+                <Link
+                  to="/login"
+                  className="mt-5 inline-block rounded-xl bg-sky-500 px-6 py-3 font-semibold text-white transition hover:bg-sky-400"
+                >
+                  เข้าสู่ระบบ
+                </Link>
+              </div>
+            )}
+
+          </div>
+
+          {/* รายการรีวิว */}
+          <div>
+            <h3 className="mb-5 text-lg font-semibold">
+              รีวิวทั้งหมด ({reviewCount})
+            </h3>
+
             <ReviewList items={reviews} />
           </div>
 
-          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
-            {isLoggedIn ? (
-              <ReviewForm key={game.id} movieTitle={game.title} onSubmit={handleReviewSubmit} />
-            ) : (
-              <p className="text-sm text-slate-500">
-                <Link to="/login" className="text-sky-600 hover:underline">เข้าสู่ระบบ</Link> เพื่อเขียนรีวิว
-              </p>
-            )}
-          </div>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
 

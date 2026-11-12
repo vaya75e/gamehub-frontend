@@ -1,22 +1,62 @@
+
 import { Link } from 'react-router-dom';
 
-export const priceText = (p) => (p === 0 ? 'ฟรี' : `฿${Number(p).toLocaleString()}`);
+// แปลงราคาเกม
+export const priceText = (game) => {
+  const prices = game.downloadLinks
+    ?.map((item) => item.price)
+    .filter((price) => typeof price === 'number');
+
+  if (!prices?.length) return 'ไม่ระบุราคา';
+
+  const minPrice = Math.min(...prices);
+
+  return minPrice === 0
+    ? 'ฟรี'
+    : `฿${minPrice.toLocaleString()}`;
+};
 
 function GameCard({ game }) {
   return (
-    <Link to={`/games/${game.id}`}
-          className="group block overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-sky-300 hover:shadow-md">
-      {game.image ? (
-        <img src={game.image} alt={`รูปเกม ${game.title}`} loading="lazy"
-             className="aspect-[2/3] w-full object-cover" />
+    <Link
+      to={`/games/${game.id}`}
+      className="group block overflow-hidden rounded-xl border border-slate-700 bg-[#1a2330] transition hover:-translate-y-1 hover:border-sky-500"
+    >
+      {game.images?.cover ? (
+        <img
+          src={game.images.cover}
+          alt={`รูปเกม ${game.title}`}
+          loading="lazy"
+          className="aspect-[4/3] w-full object-cover"
+        />
       ) : (
-        <div className="grid aspect-[2/3] w-full place-items-center bg-slate-100 text-4xl">🎮</div>
+        <div className="grid aspect-[4/3] w-full place-items-center bg-slate-800 text-4xl">
+          🎮
+        </div>
       )}
+
       <div className="p-3">
-        <h3 className="truncate font-medium text-slate-900" title={game.title}>{game.title}</h3>
-        <p className="truncate text-sm text-slate-500">{game.genre ?? 'ไม่ระบุแนว'} | {game.players ?? '-'} ผู้เล่น</p>
-        <p className="mt-1 text-sm font-semibold text-sky-600">
-          {priceText(game.price)}{game.rating > 0 && <span className="ml-2 text-xs text-slate-400">⭐ {game.rating}</span>}
+        <h3
+          className="truncate font-semibold text-white"
+          title={game.title}
+        >
+          {game.title}
+        </h3>
+
+        <p className="truncate text-sm text-slate-400">
+          {game.genre?.join(', ') || 'ไม่ระบุแนว'}
+          {' | '}
+          {game.players || '-'} ผู้เล่น
+        </p>
+
+        <p className="mt-2 text-sm font-semibold text-sky-400">
+          {priceText(game)}
+
+          {game.rating > 0 && (
+            <span className="ml-2 text-xs text-slate-400">
+              ⭐ {game.rating}
+            </span>
+          )}
         </p>
       </div>
     </Link>
