@@ -1,11 +1,7 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import {
-  getWishlist,
-  removeFromWishlist,
-} from '../api/backend';
+import { getWishlist } from '../api/backend';
 import GameGrid from '../components/GameGrid';
 
 function Wishlist() {
@@ -14,7 +10,6 @@ function Wishlist() {
   const [favoriteGames, setFavoriteGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [removingId, setRemovingId] = useState(null);
 
   // โหลดรายการโปรดจาก Backend
   const fetchWishlist = useCallback(async () => {
@@ -59,24 +54,6 @@ function Wishlist() {
   useEffect(() => {
     fetchWishlist();
   }, [fetchWishlist]);
-
-  // ลบรายการโปรดผ่าน Backend
-  async function handleRemoveFavorite(gameId) {
-    try {
-      setRemovingId(gameId);
-      setError('');
-
-      await removeFromWishlist(gameId, token);
-
-      setFavoriteGames((prev) =>
-        prev.filter((game) => game.id !== gameId)
-      );
-    } catch (err) {
-      setError(err.message || 'ไม่สามารถลบรายการโปรดได้');
-    } finally {
-      setRemovingId(null);
-    }
-  }
 
   // ยังไม่ได้เข้าสู่ระบบ
   if (!isLoggedIn) {
