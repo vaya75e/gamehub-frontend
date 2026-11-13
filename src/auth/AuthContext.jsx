@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useState } from 'react';
 import * as api from '../api/backend';
 
@@ -7,8 +8,13 @@ const TOKEN_KEY = 'gamehub.token';
 const MEMBER_KEY = 'gamehub.member';
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
-  const [member, setMember] = useState(() => JSON.parse(localStorage.getItem(MEMBER_KEY) || 'null'));
+  const [token, setToken] = useState(() =>
+    localStorage.getItem(TOKEN_KEY)
+  );
+
+  const [member, setMember] = useState(() =>
+    JSON.parse(localStorage.getItem(MEMBER_KEY) || 'null')
+  );
 
   function remember({ token, member }) {
     setToken(token);
@@ -18,14 +24,9 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-  const data = await api.login(email, password);
-
-  console.log('ข้อมูลที่ Backend ส่งกลับ:', data);
-
-  remember(data);
-
-  console.log('Token ที่บันทึก:', localStorage.getItem(TOKEN_KEY));
-}
+    const data = await api.login(email, password);
+    remember(data);
+  }
 
   async function register(email, password, displayName) {
     await api.register(email, password, displayName);
@@ -39,7 +40,6 @@ export function AuthProvider({ children }) {
     localStorage.removeItem(MEMBER_KEY);
   }
 
-  // อัปเดตข้อมูลสมาชิกในเครื่องหลังแก้โปรไฟล์
   function updateMember(newMember) {
     setMember(newMember);
     localStorage.setItem(MEMBER_KEY, JSON.stringify(newMember));
@@ -55,7 +55,12 @@ export function AuthProvider({ children }) {
     logout,
     updateMember,
   };
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
