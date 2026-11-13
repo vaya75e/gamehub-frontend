@@ -2,15 +2,15 @@
 import { useAuth } from '../auth/AuthContext';
 import { useState, useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { games } from '../data/data';
+import { getGame } from '../api/backend';
 import ReviewForm from '../components/ReviewForm';
 import ReviewList from '../components/ReviewList';
 
 // แปลงราคาเกม
 function getPrice(game) {
   const prices = game.downloadLinks
-    ?.map((item) => item.price)
-    .filter((price) => typeof price === 'number');
+    ?.map((item) => Number(item.price))
+    .filter((price) => Number.isFinite(price));
 
   if (!prices?.length) return 'ไม่ระบุราคา';
 
@@ -21,20 +21,107 @@ function getPrice(game) {
     : `฿${minPrice.toLocaleString()}`;
 }
 
+// ปรับข้อมูลจาก Backend ให้ตรงกับรูปแบบที่หน้าเว็บใช้งาน
+function normalizeGame(response) {
+  const data =
+    response?.item ??
+    response?.game ??
+    response?.data ??
+    response;
+
+  if (!data) return null;
+
+  return {
+    ...data,
+
+    images: data.images ?? {
+      cover: data.cover ?? data.image ?? data.image_url ?? '',
+      gallery: data.gallery ?? [],
+    },
+
+    downloadLinks:
+      data.downloadLinks ?? data.download_links ?? [],
+
+    genre: data.genre ?? data.genres ?? [],
+
+    type_player:
+      data.type_player ?? data.typePlayer ?? [],
+
+    isNew: data.isNew ?? data.is_new ?? false,
+
+    isPopular:
+      data.isPopular ?? data.is_popular ?? false,
+
+    isFeatured:
+      data.isFeatured ?? data.is_featured ?? false,
+  };
+}
+
 function GameDetail() {
   const { id } = useParams();
-  const game = games.find((item) => item.id === id);
-
   const { isLoggedIn, member } = useAuth();
   const navigate = useNavigate();
+
+  // ข้อมูลเกมจาก Backend
+  const [game, setGame] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // ดึงข้อมูลเกมตาม ID
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchGame() {
+      try {
+        setLoading(true);
+        setError('');
+        setGame(null);
+
+        const response = await getGame(id);
+
+        if (!cancelled) {
+          const gameData = normalizeGame(response);
+
+          if (!gameData) {
+            setError('ไม่พบข้อมูลเกมนี้');
+          } else {
+            setGame(gameData);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.message || 'ไม่สามารถโหลดข้อมูลเกมได้'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchGame();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   // รูปภาพ
   const [activeImageIndex, setActiveImageIndex] = useState(-1);
   const [galleryPage, setGalleryPage] = useState(0);
 
   const galleryRef = useRef(null);
+
   const galleryImages = game?.images?.gallery || [];
   const totalPages = Math.ceil((galleryImages.length + 1) / 3);
+
+  // เมื่อเปลี่ยนเกม ให้กลับไปแสดงรูปปก
+  useEffect(() => {
+    setActiveImageIndex(-1);
+    setGalleryPage(0);
+  }, [id]);
 
   // รีวิวชั่วคราวใน Frontend
   const [reviews, setReviews] = useState([]);
@@ -69,7 +156,7 @@ function GameDetail() {
     setReviews((prev) => [newReview, ...prev]);
   }
 
-  // รายการโปรด
+  // รายการโปรดชั่วคราวใน Frontend
   const [favoriteIds, setFavoriteIds] = useState(() => {
     try {
       return JSON.parse(
@@ -84,17 +171,17 @@ function GameDetail() {
 
   // เพิ่ม / ลบรายการโปรด
   function toggleFavorite() {
-    // ถ้ายังไม่ได้เข้าสู่ระบบ ให้ไปหน้า Login
     if (!isLoggedIn) {
       navigate('/login');
       return;
     }
 
     const updated = isFavorite
-      ? favoriteIds.filter((id) => id !== game.id)
+      ? favoriteIds.filter((favoriteId) => favoriteId !== game.id)
       : [...favoriteIds, game.id];
 
     setFavoriteIds(updated);
+
     localStorage.setItem(
       'gamehub.favorites',
       JSON.stringify(updated)
@@ -118,6 +205,8 @@ function GameDetail() {
     if (!gallery) return;
 
     function handleScroll() {
+      if (!gallery.clientWidth) return;
+
       const page = Math.round(
         gallery.scrollLeft / gallery.clientWidth
       );
@@ -134,8 +223,19 @@ function GameDetail() {
     };
   }, [totalPages]);
 
-  // ถ้าไม่พบเกม
-  if (!game) {
+  // กำลังโหลดข้อมูล
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
+        <p className="text-lg text-slate-300">
+          กำลังโหลดข้อมูลเกม...
+        </p>
+      </main>
+    );
+  }
+
+  // ไม่พบเกมหรือโหลดข้อมูลไม่สำเร็จ
+  if (error || !game) {
     return (
       <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
         <h1 className="text-2xl font-bold">
@@ -143,7 +243,7 @@ function GameDetail() {
         </h1>
 
         <p className="mt-3 text-slate-400">
-          ขออภัย ไม่พบข้อมูลเกมที่คุณต้องการ
+          {error || 'ขออภัย ไม่พบข้อมูลเกมที่คุณต้องการ'}
         </p>
 
         <Link
@@ -389,7 +489,7 @@ function GameDetail() {
                       </p>
 
                       <p className="mt-1 text-sm text-slate-400">
-                        {item.price === 0
+                        {Number(item.price) === 0
                           ? 'ฟรี'
                           : `฿${Number(item.price).toLocaleString()}`}
                       </p>
@@ -413,6 +513,7 @@ function GameDetail() {
               <h2 className="text-2xl font-bold">
                 รีวิวจากผู้เล่น
               </h2>
+
               <p className="mt-2 text-sm text-slate-400">
                 แบ่งปันความคิดเห็นเกี่ยวกับเกมนี้
               </p>
