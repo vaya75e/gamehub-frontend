@@ -5,15 +5,68 @@ import { getGames } from '../api/backend';
 
 // แปลงข้อมูลเกมจาก Backend ให้หน้าเว็บใช้งานได้
 function normalizeGame(game) {
+  const genreData =
+    game.genres ??
+    game.genre ??
+    game.genre_names ??
+    game.genreNames ??
+    [];
+
+  const genres = (
+    Array.isArray(genreData) ? genreData : [genreData]
+  )
+    .flatMap((item) => {
+      if (typeof item === 'string') {
+        return item.split(',').map((name) => name.trim());
+      }
+
+      if (item && typeof item === 'object') {
+        const name =
+          item.name ??
+          item.genre_name ??
+          item.genreName ??
+          '';
+
+        return name ? [name] : [];
+      }
+
+      return [];
+    })
+    .filter(Boolean);
+
+  // แปลงรูปแบบการเล่นจาก playerModes
+  const playerModeData = game.playerModes ?? [];
+
+  const playerModes = (
+    Array.isArray(playerModeData)
+      ? playerModeData
+      : [playerModeData]
+  )
+    .flatMap((item) => {
+      if (typeof item === 'string') {
+        return item.split(',').map((name) => name.trim());
+      }
+
+      if (item && typeof item === 'object') {
+        const name =
+          item.name ??
+          item.player_mode_name ??
+          item.playerModeName ??
+          '';
+
+        return name ? [name] : [];
+      }
+
+      return [];
+    })
+    .filter(Boolean);
+
   return {
     ...game,
     image: game.image || game.images?.cover || '',
     price: Number(game.price ?? 0),
-    genre: Array.isArray(game.genre)
-      ? game.genre
-      : game.genre
-        ? [game.genre]
-        : [],
+    genre: [...new Set(genres)],
+    playerModes: [...new Set(playerModes)],
     players: game.players || '',
   };
 }
@@ -26,7 +79,7 @@ function getPrice(game) {
 
   return price === 0
     ? 'ฟรี'
-    : `฿${price.toLocaleString()}`;
+    : `฿${price.toLocaleString('th-TH')}`;
 }
 
 // ใช้สำหรับเรียงราคาตัวเลข
@@ -50,7 +103,7 @@ function GameCard({ game, isList = false }) {
       >
         <div className={`overflow-hidden ${isList ? 'w-36 shrink-0' : ''}`}>
           <img
-            src={game.image}
+            src={game.image || '/placeholder-game.png'}
             alt={game.title}
             className={`object-cover transition duration-500 group-hover:scale-105 ${
               isList
@@ -58,7 +111,8 @@ function GameCard({ game, isList = false }) {
                 : 'aspect-[4/3] w-full'
             }`}
             onError={(e) => {
-              e.currentTarget.style.visibility = 'hidden';
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/placeholder-game.png';
             }}
           />
         </div>
@@ -71,6 +125,12 @@ function GameCard({ game, isList = false }) {
 
             <p className="mt-1 text-sm text-slate-300">
               {getPrice(game)}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              {game.players
+                ? `ผู้เล่น ${game.players}`
+                : 'ไม่ระบุจำนวนผู้เล่น'}
             </p>
           </div>
 
@@ -109,15 +169,11 @@ function Games() {
         const items = await getGames();
 
         if (!cancelled) {
-          setGames(
-            (items || []).map(normalizeGame)
-          );
+          setGames((items || []).map(normalizeGame));
         }
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err.message || 'ไม่สามารถโหลดข้อมูลเกมได้'
-          );
+          setError(err.message || 'ไม่สามารถโหลดข้อมูลเกมได้');
         }
       } finally {
         if (!cancelled) {
@@ -140,13 +196,6 @@ function Games() {
     ),
   ];
 
-  // จำนวนผู้เล่นทั้งหมด
-  const playerOptions = [
-    ...new Set(
-      games.map((game) => game.players).filter(Boolean)
-    ),
-  ];
-
   // ค้นหาและกรองเกม
   const filteredGames = games
     .filter((game) => {
@@ -157,8 +206,10 @@ function Games() {
       const matchGenre =
         genre === 'all' || game.genre?.includes(genre);
 
+      // กรองตามรูปแบบการเล่นจาก playerModes
       const matchPlayers =
-        players === 'all' || game.players === players;
+        players === 'all' ||
+        game.playerModes?.includes(players);
 
       return matchName && matchGenre && matchPlayers;
     })
@@ -172,7 +223,7 @@ function Games() {
       }
 
       if (sort === 'name') {
-        return a.title.localeCompare(b.title);
+        return (a.title || '').localeCompare(b.title || '');
       }
 
       return (Number(b.rating) || 0) - (Number(a.rating) || 0);
@@ -182,6 +233,15 @@ function Games() {
   const totalPages = Math.ceil(
     filteredGames.length / gamesPerPage
   );
+
+  // ป้องกันหน้าปัจจุบันเกินจำนวนหน้าหลังกรองข้อมูล
+  useEffect(() => {
+    if (totalPages === 0 && page !== 1) {
+      setPage(1);
+    } else if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const shown = filteredGames.slice(
     (page - 1) * gamesPerPage,
@@ -266,37 +326,27 @@ function Games() {
             />
           </div>
 
-          {/* ประเภทเกม */}
-          <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              onClick={() => changeFilter(setGenre, 'all')}
-              className={`rounded-full px-6 py-2.5 text-sm font-medium transition ${
-                genre === 'all'
-                  ? 'bg-sky-500 text-white'
-                  : 'bg-[#1b2432] text-slate-200 hover:bg-slate-700'
-              }`}
-            >
-              ทั้งหมด
-            </button>
-
-            {genres.map((g) => (
-              <button
-                key={g}
-                onClick={() => changeFilter(setGenre, g)}
-                className={`rounded-full px-6 py-2.5 text-sm font-medium transition ${
-                  genre === g
-                    ? 'bg-sky-500 text-white'
-                    : 'bg-[#1b2432] text-slate-200 hover:bg-slate-700'
-                }`}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
-
           {/* ตัวกรองเพิ่มเติม */}
           <div className="mt-5 flex flex-wrap gap-3">
 
+            {/* Dropdown ประเภทเกม */}
+            <select
+              value={genre}
+              onChange={(e) =>
+                changeFilter(setGenre, e.target.value)
+              }
+              className="rounded-full border border-slate-700 bg-[#1b2432] px-5 py-3 text-sm text-white outline-none focus:border-sky-500"
+            >
+              <option value="all">ทุกประเภทเกม</option>
+
+              {genres.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+
+            {/* Dropdown รูปแบบการเล่น */}
             <select
               value={players}
               onChange={(e) =>
@@ -304,15 +354,12 @@ function Games() {
               }
               className="rounded-full border border-slate-700 bg-[#1b2432] px-5 py-3 text-sm text-white outline-none focus:border-sky-500"
             >
-              <option value="all">จำนวนผู้เล่นทั้งหมด</option>
-
-              {playerOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p} คน
-                </option>
-              ))}
+              <option value="all">รูปแบบการเล่นทั้งหมด</option>
+              <option value="ผู้เล่นคนเดียว">ผู้เล่นคนเดียว</option>
+              <option value="ผู้เล่นหลายคน">ผู้เล่นหลายคน</option>
             </select>
 
+            {/* เรียงลำดับ */}
             <select
               value={sort}
               onChange={(e) =>
@@ -385,7 +432,9 @@ function Games() {
         ) : (
           <div className="rounded-xl border border-slate-800 bg-[#1a2330] py-16 text-center">
             <p className="text-lg font-semibold text-white">
-              ไม่พบเกมที่ค้นหา
+              {games.length === 0
+                ? 'ยังไม่มีข้อมูลเกม'
+                : 'ไม่พบเกมที่ค้นหา'}
             </p>
 
             <p className="mt-2 text-sm text-slate-400">
@@ -397,6 +446,7 @@ function Games() {
                 setQuery('');
                 setGenre('all');
                 setPlayers('all');
+                setSort('recommended');
                 setPage(1);
               }}
               className="mt-5 rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-400"

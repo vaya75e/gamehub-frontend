@@ -1,35 +1,84 @@
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { games as allGames } from '../data/data';
 import { useAuth } from '../auth/AuthContext';
+import {
+  getWishlist,
+  removeFromWishlist,
+} from '../api/backend';
 import GameGrid from '../components/GameGrid';
 
 function Wishlist() {
-  const { isLoggedIn, member } = useAuth();
+  const { isLoggedIn, member, token } = useAuth();
 
-  const [favoriteIds, setFavoriteIds] = useState(() => {
+  const [favoriteGames, setFavoriteGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [removingId, setRemovingId] = useState(null);
+
+  // โหลดรายการโปรดจาก Backend
+  const fetchWishlist = useCallback(async () => {
+    if (!isLoggedIn || !token) return;
+
     try {
-      return JSON.parse(localStorage.getItem('gamehub.favorites') || '[]');
-    } catch {
-      return [];
+      setLoading(true);
+      setError('');
+
+      const result = await getWishlist(token);
+
+      const items = Array.isArray(result)
+        ? result
+        : result?.items || result?.wishlist || [];
+
+      const games = items.map((item) => {
+        const game = item.game || item;
+
+        return {
+          ...game,
+          id: game.id ?? item.gameId ?? item.game_id,
+          images: {
+            cover:
+              game.images?.cover ||
+              game.image ||
+              game.imageUrl ||
+              '',
+            gallery: game.images?.gallery || [],
+          },
+          price: game.price ?? 0,
+        };
+      });
+
+      setFavoriteGames(games);
+    } catch (err) {
+      setError(err.message || 'ไม่สามารถโหลดรายการโปรดได้');
+    } finally {
+      setLoading(false);
     }
-  });
+  }, [isLoggedIn, token]);
 
-  // ลบเกมออกจากรายการโปรด
-  function removeFavorite(gameId) {
-    const updated = favoriteIds.filter((id) => id !== gameId);
+  useEffect(() => {
+    fetchWishlist();
+  }, [fetchWishlist]);
 
-    setFavoriteIds(updated);
-    localStorage.setItem('gamehub.favorites', JSON.stringify(updated));
+  // ลบรายการโปรดผ่าน Backend
+  async function handleRemoveFavorite(gameId) {
+    try {
+      setRemovingId(gameId);
+      setError('');
+
+      await removeFromWishlist(gameId, token);
+
+      setFavoriteGames((prev) =>
+        prev.filter((game) => game.id !== gameId)
+      );
+    } catch (err) {
+      setError(err.message || 'ไม่สามารถลบรายการโปรดได้');
+    } finally {
+      setRemovingId(null);
+    }
   }
 
-  // เลือกเฉพาะเกมที่อยู่ในรายการโปรด
-  const favoriteGames = allGames.filter((game) =>
-    favoriteIds.includes(game.id)
-  );
-
-  // ต้องเข้าสู่ระบบก่อน
+  // ยังไม่ได้เข้าสู่ระบบ
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-[#0b111b] px-4 py-20 text-center text-white">
@@ -54,10 +103,10 @@ function Wishlist() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b111b] px-4 py-8 text-white md:px-8">
+    <main className="min-h-screen bg-[#0b111b] px-4 py-8 text-white md:px-8">
       <div className="mx-auto max-w-7xl">
 
-        {/* หัวข้อ */}
+        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold">
             <span className="mr-2 text-red-400">♥</span>
@@ -69,31 +118,39 @@ function Wishlist() {
             {member?.displayName && ` ของ ${member.displayName}`}
           </p>
 
-          <p className="mt-2 text-sm text-slate-500">
-            ทั้งหมด {favoriteGames.length} เกม
-          </p>
+          {!loading && (
+            <p className="mt-2 text-sm text-slate-500">
+              ทั้งหมด {favoriteGames.length} เกม
+            </p>
+          )}
         </div>
 
-        {/* รายการเกม */}
-        {favoriteGames.length > 0 ? (
-          <div className="space-y-5">
+        {/* Loading */}
+        {loading ? (
+          <div className="py-20 text-center text-slate-400">
+            กำลังโหลดรายการโปรด...
+          </div>
+        ) : error ? (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-10 text-center">
+            <p className="text-red-400">{error}</p>
+
+            <button
+              onClick={fetchWishlist}
+              className="mt-5 rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-500"
+            >
+              ลองอีกครั้ง
+            </button>
+          </div>
+        ) : favoriteGames.length > 0 ? (
+          <div className="space-y-6">
+
+            {/* Game Grid */}
             <GameGrid
               games={favoriteGames}
               status="success"
               error={null}
             />
 
-            <div className="flex flex-wrap gap-3">
-              {favoriteGames.map((game) => (
-                <button
-                  key={game.id}
-                  onClick={() => removeFavorite(game.id)}
-                  className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-400 transition hover:bg-red-500/10"
-                >
-                  ♥ นำ {game.title} ออกจากรายการโปรด
-                </button>
-              ))}
-            </div>
           </div>
         ) : (
           <div className="rounded-2xl border border-slate-700 bg-[#1a2330] px-4 py-16 text-center">
@@ -116,7 +173,7 @@ function Wishlist() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
 

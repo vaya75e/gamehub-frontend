@@ -4,16 +4,40 @@ import { Link } from 'react-router-dom';
 // แปลงราคาเกม
 export const priceText = (game) => {
   const prices = game.downloadLinks
-    ?.map((item) => item.price)
-    .filter((price) => typeof price === 'number');
+    ?.map((item) => Number(item.price))
+    .filter((price) => Number.isFinite(price));
 
-  if (!prices?.length) return 'ไม่ระบุราคา';
+  // ถ้าไม่มี downloadLinks ให้ใช้ราคาจาก Backend
+  if (!prices?.length) {
+    if (game.price !== undefined && game.price !== null) {
+      const price = Number(game.price);
+
+      if (Number.isFinite(price)) {
+        return price === 0 ? 'ฟรี' : `฿${price.toLocaleString()}`;
+      }
+    }
+
+    return 'ไม่ระบุราคา';
+  }
 
   const minPrice = Math.min(...prices);
 
   return minPrice === 0
     ? 'ฟรี'
     : `฿${minPrice.toLocaleString()}`;
+};
+
+// รองรับ genre ทั้ง String และ Array
+const getGenreText = (genre) => {
+  if (Array.isArray(genre)) {
+    return genre.join(', ') || 'ไม่ระบุแนว';
+  }
+
+  if (typeof genre === 'string') {
+    return genre || 'ไม่ระบุแนว';
+  }
+
+  return 'ไม่ระบุแนว';
 };
 
 function GameCard({ game }) {
@@ -44,7 +68,7 @@ function GameCard({ game }) {
         </h3>
 
         <p className="truncate text-sm text-slate-400">
-          {game.genre?.join(', ') || 'ไม่ระบุแนว'}
+          {getGenreText(game.genre)}
           {' | '}
           {game.players || '-'} ผู้เล่น
         </p>
@@ -52,7 +76,7 @@ function GameCard({ game }) {
         <p className="mt-2 text-sm font-semibold text-sky-400">
           {priceText(game)}
 
-          {game.rating > 0 && (
+          {Number(game.rating) > 0 && (
             <span className="ml-2 text-xs text-slate-400">
               ⭐ {game.rating}
             </span>

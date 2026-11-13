@@ -17,16 +17,30 @@ import ReviewList from '../components/ReviewList';
 // แปลงราคาเกม
 function getPrice(game) {
   const prices = game.downloadLinks
-    ?.map((item) => Number(item.price))
-    .filter((price) => Number.isFinite(price));
+    ?.map((item) => item.price)
+    .filter((price) => price !== null && price !== undefined && price !== '')
+    .map(Number)
+    .filter(Number.isFinite);
 
-  if (!prices?.length) return 'ไม่ระบุราคา';
+  if (prices?.length) {
+    const minPrice = Math.min(...prices);
 
-  const minPrice = Math.min(...prices);
+    return minPrice === 0
+      ? 'ฟรี'
+      : `฿${minPrice.toLocaleString()}`;
+  }
 
-  return minPrice === 0
-    ? 'ฟรี'
-    : `฿${minPrice.toLocaleString()}`;
+  if (game.price != null) {
+    const price = Number(game.price);
+
+    if (Number.isFinite(price)) {
+      return price === 0
+        ? 'ฟรี'
+        : `฿${price.toLocaleString()}`;
+    }
+  }
+
+  return 'ไม่ระบุราคา';
 }
 
 // แปลงข้อมูลจาก Backend ให้ตรงกับรูปแบบที่หน้าเว็บใช้งาน
@@ -39,45 +53,154 @@ function normalizeGame(response) {
 
   if (!data) return null;
 
+  // รองรับรูปภาพทั้งแบบ Object และ Array
   const images = data.images ?? {};
 
-  const genreData = data.genre ?? data.genres ?? [];
+  const coverImage =
+    !Array.isArray(images) && typeof images === 'object'
+      ? images.cover ??
+        data.cover ??
+        data.image ??
+        data.image_url ??
+        ''
+      : data.image ??
+        data.cover ??
+        data.image_url ??
+        '';
+
+  const galleryImages = Array.isArray(images)
+    ? images
+    : Array.isArray(images.gallery)
+      ? images.gallery
+      : Array.isArray(data.gallery)
+        ? data.gallery
+        : [];
+
+  // แนวเกม: รองรับหลายชื่อ field จาก Backend
+  const genreData =
+    data.genres ??
+    data.genreNames ??
+    data.genre_names ??
+    data.genre ??
+    data.genre_name ??
+    data.gameGenres ??
+    data.game_genres ??
+    [];
+
+  // แปลงแนวเกมให้เป็น Array ของชื่อประเภท
+  const normalizedGenres = (
+    Array.isArray(genreData) ? genreData : [genreData]
+  )
+    .flatMap((item) => {
+      if (typeof item === 'string') {
+        // รองรับกรณี Backend ส่ง "Action, Adventure"
+        return item.split(',').map((name) => name.trim());
+      }
+
+      if (item && typeof item === 'object') {
+        const name =
+          item.name ??
+          item.genreName ??
+          item.genre_name ??
+          item.genre?.name ??
+          '';
+
+        return name ? [name] : [];
+      }
+
+      return [];
+    })
+    .filter(Boolean);
+
+  // รูปแบบการเล่น
   const playerData =
-    data.type_player ?? data.typePlayer ?? [];
+    data.type_player ??
+    data.typePlayer ??
+    data.player_types ??
+    data.playerModes ??
+    [];
+
+  // รองรับช่องทางดาวน์โหลดจาก Backend
+  let downloadLinks =
+    data.downloadLinks ??
+    data.download_links ??
+    data.platforms ??
+    [];
+
+  if (!Array.isArray(downloadLinks)) {
+    downloadLinks = [];
+  }
+
+  // รองรับ downloadUrl แบบลิงก์เดียว
+  const downloadUrl =
+    data.downloadUrl ??
+    data.download_url ??
+    '';
+
+  if (downloadLinks.length === 0 && downloadUrl) {
+    downloadLinks = [
+      {
+        platform: data.platform || 'ช่องทางดาวน์โหลด',
+        price: data.price ?? null,
+        url: downloadUrl,
+      },
+    ];
+  }
+
+  // จัดรูปแบบข้อมูลช่องทางดาวน์โหลด
+  downloadLinks = downloadLinks.map((item) => ({
+    ...item,
+
+    platform:
+      item.platform ??
+      item.name ??
+      item.store ??
+      data.platform ??
+      'ไม่ระบุช่องทาง',
+
+    price: item.price ?? data.price ?? null,
+
+    discountPercent:
+      item.discountPercent ??
+      item.discount_percent ??
+      0,
+
+    url:
+      item.url ??
+      item.downloadUrl ??
+      item.download_url ??
+      '',
+  }));
 
   return {
     ...data,
 
+    // รูปภาพ
     images: {
-      cover:
-        images.cover ??
-        data.cover ??
-        data.image ??
-        data.image_url ??
-        '',
-      gallery:
-        images.gallery ??
-        data.gallery ??
-        [],
+      cover: coverImage,
+      gallery: galleryImages,
     },
 
-    downloadLinks:
-      data.downloadLinks ??
-      data.download_links ??
-      [],
+    // ช่องทางดาวน์โหลด
+    downloadLinks,
 
-    genre: Array.isArray(genreData)
-      ? genreData
-      : genreData
-        ? [genreData]
-        : [],
+    // แนวเกมทั้งหมด
+    genre: [...new Set(normalizedGenres)],
 
+    // รูปแบบการเล่น
     type_player: Array.isArray(playerData)
       ? playerData
       : playerData
         ? [playerData]
         : [],
 
+    // จำนวนผู้เล่น
+    players: data.players ?? '',
+
+    // รายละเอียดเกม
+    description: data.description ?? '',
+
+    // สถานะเกม
     isNew: data.isNew ?? data.is_new ?? false,
     isPopular: data.isPopular ?? data.is_popular ?? false,
     isFeatured: data.isFeatured ?? data.is_featured ?? false,
@@ -146,10 +269,7 @@ function GameDetail() {
     setGalleryPage(0);
   }, [id]);
 
-  // =========================
   // รีวิวจาก Backend
-  // =========================
-
   const [reviews, setReviews] = useState([]);
   const [reviewLoading, setReviewLoading] = useState(false);
 
@@ -158,7 +278,6 @@ function GameDetail() {
     try {
       setReviewLoading(true);
 
-      // getReviews คืนค่าเป็น Array อยู่แล้ว
       const items = await getReviews(id);
 
       setReviews(
@@ -191,7 +310,6 @@ function GameDetail() {
       try {
         setReviewLoading(true);
 
-        // getReviews คืนค่าเป็น Array ไม่ใช่ { items: [...] }
         const items = await getReviews(id);
 
         if (!cancelled) {
@@ -253,22 +371,16 @@ function GameDetail() {
       throw new Error('กรุณาเข้าสู่ระบบก่อนเขียนรีวิว');
     }
 
-    // บันทึกข้อความรีวิว
     await postReview(id, text, token);
 
-    // บันทึกคะแนนดาว
     if (score != null && Number(score) > 0) {
       await putVote(id, Number(score), token);
     }
 
-    // โหลดรีวิวใหม่หลังบันทึก
     await fetchReviews();
   }
 
-  // =========================
   // รายการโปรดจาก Backend
-  // =========================
-
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
 
@@ -283,7 +395,6 @@ function GameDetail() {
       }
 
       try {
-        // getWishlist คืนค่าเป็น Array อยู่แล้ว
         const items = await getWishlist(token);
 
         if (!cancelled) {
@@ -442,11 +553,12 @@ function GameDetail() {
           <div>
             <div className="overflow-hidden rounded-2xl border border-slate-700 bg-[#1a2330] shadow-xl">
               <img
-                src={activeImage || game.images?.cover}
+                src={activeImage || game.images?.cover || '/placeholder-game.png'}
                 alt={game.title}
                 className="aspect-video w-full object-cover"
                 onError={(e) => {
-                  e.currentTarget.src = game.images?.cover || '';
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/placeholder-game.png';
                 }}
               />
             </div>
@@ -490,7 +602,7 @@ function GameDetail() {
                       }`}
                     >
                       <img
-                        src={game.images?.cover}
+                        src={game.images?.cover || '/placeholder-game.png'}
                         alt="รูปปกเกม"
                         className="aspect-video w-full object-cover"
                       />
@@ -580,12 +692,13 @@ function GameDetail() {
             <div className="mt-6 rounded-xl border border-slate-700 bg-[#1a2330] p-5">
               <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-4 text-sm">
 
+                {/* แนวเกมทั้งหมด */}
                 <dt className="text-slate-400">แนวเกม</dt>
                 <dd className="flex flex-wrap gap-2">
                   {game.genre.length > 0
                     ? game.genre.map((item, index) => (
                         <span
-                          key={index}
+                          key={`${item}-${index}`}
                           className="rounded-full bg-slate-700 px-3 py-1 text-slate-200"
                         >
                           {item}
@@ -598,7 +711,16 @@ function GameDetail() {
                 <dd>{game.players || '-'}</dd>
 
                 <dt className="text-slate-400">รูปแบบการเล่น</dt>
-                <dd>{game.type_player.join(', ') || '-'}</dd>
+                <dd>
+                  {game.type_player.length > 0
+                    ? game.type_player.map((item) =>
+                        typeof item === 'string' ? item : item.name
+                      ).join(', ')
+                    : 'ยังไม่มีข้อมูล'}
+                </dd>
+
+                <dt className="text-slate-400">แพลตฟอร์ม</dt>
+                <dd>{game.platform || '-'}</dd>
 
               </dl>
             </div>
@@ -636,21 +758,18 @@ function GameDetail() {
                   : 'เพิ่มในรายการโปรด'}
             </button>
 
-            {/* ช่องทางซื้อเกม */}
+            {/* ช่องทางดาวน์โหลดเกม */}
             <section className="mt-8">
               <h2 className="mb-4 text-xl font-bold">
-                ช่องทางซื้อเกม
+                ช่องทางดาวน์โหลดเกม
               </h2>
 
               <div className="space-y-3">
-                {game.downloadLinks?.length > 0 ? (
+                {game.downloadLinks.length > 0 ? (
                   game.downloadLinks.map((item, index) => (
-                    <a
+                    <div
                       key={index}
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-xl border border-slate-700 bg-[#1a2330] p-4 transition hover:border-sky-500"
+                      className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-700 bg-[#1a2330] p-4 transition hover:border-sky-500"
                     >
                       <div>
                         <p className="font-semibold text-white">
@@ -658,20 +777,39 @@ function GameDetail() {
                         </p>
 
                         <p className="mt-1 text-sm text-slate-400">
-                          {Number(item.price) === 0
-                            ? 'ฟรี'
-                            : `฿${Number(item.price).toLocaleString()}`}
+                          {item.price == null
+                            ? 'ไม่ระบุราคา'
+                            : Number(item.price) === 0
+                              ? 'ฟรี'
+                              : `฿${Number(item.price).toLocaleString()}`}
+
+                          {Number(item.discountPercent) > 0 && (
+                            <span className="ml-2 text-green-400">
+                              ลด {item.discountPercent}%
+                            </span>
+                          )}
                         </p>
                       </div>
 
-                      <span className="text-sky-400">
-                        ไปยังร้านค้า →
-                      </span>
-                    </a>
+                      {item.url ? (
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-lg bg-sky-500 px-5 py-2.5 font-semibold text-white transition hover:bg-sky-400"
+                        >
+                          ไปยังช่องทางดาวน์โหลด →
+                        </a>
+                      ) : (
+                        <span className="text-sm text-slate-500">
+                          ยังไม่มีลิงก์ดาวน์โหลด
+                        </span>
+                      )}
+                    </div>
                   ))
                 ) : (
                   <p className="text-sm text-slate-400">
-                    ยังไม่มีช่องทางซื้อเกม
+                    ยังไม่มีช่องทางดาวน์โหลดเกม
                   </p>
                 )}
               </div>

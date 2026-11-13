@@ -147,14 +147,16 @@ function Home() {
     };
   }, []);
 
-  // เกมเด่น
-  const featured = games.find((game) => game.isFeatured);
+  // เกมเด่น เลือกเกมแรก
+const featured = games[0];
 
-  // เกมใหม่ล่าสุด
-  const newest = games.filter((game) => game.isNew);
+// เกมใหม่ล่าสุด แสดง 3 เกมแรก
+const newest = games.slice(0, 3);
 
-  // เกมยอดนิยม
-  const popular = games.filter((game) => game.isPopular);
+// เกมยอดนิยม เรียงตามคะแนน Rating
+const popular = [...games]
+  .sort((a, b) => b.rating - a.rating)
+  .slice(0, 3);
 
   if (loading) {
     return (
