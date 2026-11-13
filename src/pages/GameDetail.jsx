@@ -2,7 +2,15 @@
 import { useAuth } from '../auth/AuthContext';
 import { useState, useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getGame } from '../api/backend';
+import {
+  getGame,
+  getReviews,
+  postReview,
+  putVote,
+  getWishlist,
+  addToWishlist,
+  removeFromWishlist,
+} from '../api/backend';
 import ReviewForm from '../components/ReviewForm';
 import ReviewList from '../components/ReviewList';
 
@@ -21,7 +29,7 @@ function getPrice(game) {
     : `฿${minPrice.toLocaleString()}`;
 }
 
-// ปรับข้อมูลจาก Backend ให้ตรงกับรูปแบบที่หน้าเว็บใช้งาน
+// แปลงข้อมูลจาก Backend ให้ตรงกับรูปแบบที่หน้าเว็บใช้งาน
 function normalizeGame(response) {
   const data =
     response?.item ??
@@ -31,35 +39,54 @@ function normalizeGame(response) {
 
   if (!data) return null;
 
+  const images = data.images ?? {};
+
+  const genreData = data.genre ?? data.genres ?? [];
+  const playerData =
+    data.type_player ?? data.typePlayer ?? [];
+
   return {
     ...data,
 
-    images: data.images ?? {
-      cover: data.cover ?? data.image ?? data.image_url ?? '',
-      gallery: data.gallery ?? [],
+    images: {
+      cover:
+        images.cover ??
+        data.cover ??
+        data.image ??
+        data.image_url ??
+        '',
+      gallery:
+        images.gallery ??
+        data.gallery ??
+        [],
     },
 
     downloadLinks:
-      data.downloadLinks ?? data.download_links ?? [],
+      data.downloadLinks ??
+      data.download_links ??
+      [],
 
-    genre: data.genre ?? data.genres ?? [],
+    genre: Array.isArray(genreData)
+      ? genreData
+      : genreData
+        ? [genreData]
+        : [],
 
-    type_player:
-      data.type_player ?? data.typePlayer ?? [],
+    type_player: Array.isArray(playerData)
+      ? playerData
+      : playerData
+        ? [playerData]
+        : [],
 
     isNew: data.isNew ?? data.is_new ?? false,
-
-    isPopular:
-      data.isPopular ?? data.is_popular ?? false,
-
-    isFeatured:
-      data.isFeatured ?? data.is_featured ?? false,
+    isPopular: data.isPopular ?? data.is_popular ?? false,
+    isFeatured: data.isFeatured ?? data.is_featured ?? false,
   };
 }
 
 function GameDetail() {
   const { id } = useParams();
-  const { isLoggedIn, member } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const navigate = useNavigate();
 
   // ข้อมูลเกมจาก Backend
@@ -78,10 +105,9 @@ function GameDetail() {
         setGame(null);
 
         const response = await getGame(id);
+        const gameData = normalizeGame(response);
 
         if (!cancelled) {
-          const gameData = normalizeGame(response);
-
           if (!gameData) {
             setError('ไม่พบข้อมูลเกมนี้');
           } else {
@@ -90,9 +116,7 @@ function GameDetail() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err.message || 'ไม่สามารถโหลดข้อมูลเกมได้'
-          );
+          setError(err.message || 'ไม่สามารถโหลดข้อมูลเกมได้');
         }
       } finally {
         if (!cancelled) {
@@ -111,7 +135,6 @@ function GameDetail() {
   // รูปภาพ
   const [activeImageIndex, setActiveImageIndex] = useState(-1);
   const [galleryPage, setGalleryPage] = useState(0);
-
   const galleryRef = useRef(null);
 
   const galleryImages = game?.images?.gallery || [];
@@ -123,69 +146,209 @@ function GameDetail() {
     setGalleryPage(0);
   }, [id]);
 
-  // รีวิวชั่วคราวใน Frontend
+  // =========================
+  // รีวิวจาก Backend
+  // =========================
+
   const [reviews, setReviews] = useState([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+
+  // ดึงรีวิวจาก Backend
+  async function fetchReviews() {
+    try {
+      setReviewLoading(true);
+
+      // getReviews คืนค่าเป็น Array อยู่แล้ว
+      const items = await getReviews(id);
+
+      setReviews(
+        (Array.isArray(items) ? items : []).map((review) => ({
+          ...review,
+          member: {
+            ...review.member,
+            displayName:
+              review.member?.displayName || 'สมาชิก',
+          },
+          score:
+            review.score == null
+              ? 0
+              : Number(review.score),
+        }))
+      );
+    } catch (err) {
+      console.error('โหลดรีวิวไม่สำเร็จ:', err);
+      setReviews([]);
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
+  // โหลดรีวิวเมื่อเปลี่ยนเกม
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReviews() {
+      try {
+        setReviewLoading(true);
+
+        // getReviews คืนค่าเป็น Array ไม่ใช่ { items: [...] }
+        const items = await getReviews(id);
+
+        if (!cancelled) {
+          setReviews(
+            (Array.isArray(items) ? items : []).map((review) => ({
+              ...review,
+              member: {
+                ...review.member,
+                displayName:
+                  review.member?.displayName || 'สมาชิก',
+              },
+              score:
+                review.score == null
+                  ? 0
+                  : Number(review.score),
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('โหลดรีวิวไม่สำเร็จ:', err);
+
+        if (!cancelled) {
+          setReviews([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setReviewLoading(false);
+        }
+      }
+    }
+
+    loadReviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   // คำนวณคะแนนเฉลี่ย
-  const averageRating = reviews.length > 0
+  const ratedReviews = reviews.filter(
+    (review) => review.score > 0
+  );
+
+  const averageRating = ratedReviews.length > 0
     ? (
-        reviews.reduce((total, review) => total + review.score, 0) /
-        reviews.length
+        ratedReviews.reduce(
+          (total, review) => total + review.score,
+          0
+        ) / ratedReviews.length
       ).toFixed(1)
     : '0.0';
 
   // จำนวนรีวิว
   const reviewCount = reviews.length;
 
-  // เพิ่มรีวิว
+  // เพิ่มรีวิวและบันทึกคะแนนลง Backend
   async function handleAddReview(text, score) {
-    if (!isLoggedIn) {
+    if (!isLoggedIn || !token) {
       throw new Error('กรุณาเข้าสู่ระบบก่อนเขียนรีวิว');
     }
 
-    const newReview = {
-      id: Date.now(),
-      member: {
-        displayName: member?.displayName || 'สมาชิก',
-      },
-      score,
-      text,
-      createdAt: new Date().toISOString(),
-    };
+    // บันทึกข้อความรีวิว
+    await postReview(id, text, token);
 
-    setReviews((prev) => [newReview, ...prev]);
+    // บันทึกคะแนนดาว
+    if (score != null && Number(score) > 0) {
+      await putVote(id, Number(score), token);
+    }
+
+    // โหลดรีวิวใหม่หลังบันทึก
+    await fetchReviews();
   }
 
-  // รายการโปรดชั่วคราวใน Frontend
-  const [favoriteIds, setFavoriteIds] = useState(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem('gamehub.favorites') || '[]'
-      );
-    } catch {
-      return [];
+  // =========================
+  // รายการโปรดจาก Backend
+  // =========================
+
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+
+  // ดึงรายการโปรดของสมาชิก
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchWishlist() {
+      if (!isLoggedIn || !token) {
+        setFavoriteIds([]);
+        return;
+      }
+
+      try {
+        // getWishlist คืนค่าเป็น Array อยู่แล้ว
+        const items = await getWishlist(token);
+
+        if (!cancelled) {
+          setFavoriteIds(
+            (Array.isArray(items) ? items : []).map((item) =>
+              Number(
+                item.gameId ??
+                item.game_id ??
+                item.game?.id ??
+                item.id
+              )
+            )
+          );
+        }
+      } catch (err) {
+        console.error('โหลดรายการโปรดไม่สำเร็จ:', err);
+
+        if (!cancelled) {
+          setFavoriteIds([]);
+        }
+      }
     }
-  });
 
-  const isFavorite = favoriteIds.includes(game?.id);
+    fetchWishlist();
 
-  // เพิ่ม / ลบรายการโปรด
-  function toggleFavorite() {
-    if (!isLoggedIn) {
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, token]);
+
+  const isFavorite = favoriteIds.includes(Number(game?.id));
+
+  // เพิ่ม / ลบรายการโปรดผ่าน Backend
+  async function toggleFavorite() {
+    if (!isLoggedIn || !token) {
       navigate('/login');
       return;
     }
 
-    const updated = isFavorite
-      ? favoriteIds.filter((favoriteId) => favoriteId !== game.id)
-      : [...favoriteIds, game.id];
+    if (favoriteLoading || !game) return;
 
-    setFavoriteIds(updated);
+    try {
+      setFavoriteLoading(true);
 
-    localStorage.setItem(
-      'gamehub.favorites',
-      JSON.stringify(updated)
-    );
+      if (isFavorite) {
+        await removeFromWishlist(game.id, token);
+
+        setFavoriteIds((prev) =>
+          prev.filter(
+            (favoriteId) =>
+              favoriteId !== Number(game.id)
+          )
+        );
+      } else {
+        await addToWishlist(game.id, token);
+
+        setFavoriteIds((prev) =>
+          [...new Set([...prev, Number(game.id)])]
+        );
+      }
+    } catch (err) {
+      alert(err.message || 'ไม่สามารถแก้ไขรายการโปรดได้');
+    } finally {
+      setFavoriteLoading(false);
+    }
   }
 
   // เลื่อนแถบรูปภาพ
@@ -223,7 +386,7 @@ function GameDetail() {
     };
   }, [totalPages]);
 
-  // กำลังโหลดข้อมูล
+  // กำลังโหลดข้อมูลเกม
   if (loading) {
     return (
       <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
@@ -302,7 +465,6 @@ function GameDetail() {
                 </div>
 
                 <div className="flex items-center gap-2">
-
                   <button
                     type="button"
                     onClick={() => scrollGallery(-1)}
@@ -420,10 +582,10 @@ function GameDetail() {
 
                 <dt className="text-slate-400">แนวเกม</dt>
                 <dd className="flex flex-wrap gap-2">
-                  {game.genre?.length > 0
-                    ? game.genre.map((item) => (
+                  {game.genre.length > 0
+                    ? game.genre.map((item, index) => (
                         <span
-                          key={item}
+                          key={index}
                           className="rounded-full bg-slate-700 px-3 py-1 text-slate-200"
                         >
                           {item}
@@ -436,7 +598,7 @@ function GameDetail() {
                 <dd>{game.players || '-'}</dd>
 
                 <dt className="text-slate-400">รูปแบบการเล่น</dt>
-                <dd>{game.type_player?.join(', ') || '-'}</dd>
+                <dd>{game.type_player.join(', ') || '-'}</dd>
 
               </dl>
             </div>
@@ -456,7 +618,8 @@ function GameDetail() {
             <button
               type="button"
               onClick={toggleFavorite}
-              className={`mt-6 flex items-center gap-2 rounded-xl border px-5 py-3 font-semibold transition ${
+              disabled={favoriteLoading}
+              className={`mt-6 flex items-center gap-2 rounded-xl border px-5 py-3 font-semibold transition disabled:cursor-wait disabled:opacity-50 ${
                 isFavorite
                   ? 'border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500/20'
                   : 'border-slate-600 bg-[#1a2330] text-white hover:border-red-400 hover:text-red-400'
@@ -465,7 +628,12 @@ function GameDetail() {
               <span className="text-xl">
                 {isFavorite ? '♥' : '♡'}
               </span>
-              {isFavorite ? 'อยู่ในรายการโปรดแล้ว' : 'เพิ่มในรายการโปรด'}
+
+              {favoriteLoading
+                ? 'กำลังบันทึก...'
+                : isFavorite
+                  ? 'อยู่ในรายการโปรดแล้ว'
+                  : 'เพิ่มในรายการโปรด'}
             </button>
 
             {/* ช่องทางซื้อเกม */}
@@ -475,31 +643,37 @@ function GameDetail() {
               </h2>
 
               <div className="space-y-3">
-                {game.downloadLinks?.map((item, index) => (
-                  <a
-                    key={index}
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between rounded-xl border border-slate-700 bg-[#1a2330] p-4 transition hover:border-sky-500"
-                  >
-                    <div>
-                      <p className="font-semibold text-white">
-                        {item.platform}
-                      </p>
+                {game.downloadLinks?.length > 0 ? (
+                  game.downloadLinks.map((item, index) => (
+                    <a
+                      key={index}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-xl border border-slate-700 bg-[#1a2330] p-4 transition hover:border-sky-500"
+                    >
+                      <div>
+                        <p className="font-semibold text-white">
+                          {item.platform}
+                        </p>
 
-                      <p className="mt-1 text-sm text-slate-400">
-                        {Number(item.price) === 0
-                          ? 'ฟรี'
-                          : `฿${Number(item.price).toLocaleString()}`}
-                      </p>
-                    </div>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {Number(item.price) === 0
+                            ? 'ฟรี'
+                            : `฿${Number(item.price).toLocaleString()}`}
+                        </p>
+                      </div>
 
-                    <span className="text-sky-400">
-                      ไปยังร้านค้า →
-                    </span>
-                  </a>
-                ))}
+                      <span className="text-sky-400">
+                        ไปยังร้านค้า →
+                      </span>
+                    </a>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-400">
+                    ยังไม่มีช่องทางซื้อเกม
+                  </p>
+                )}
               </div>
             </section>
           </div>
@@ -534,7 +708,6 @@ function GameDetail() {
 
           {/* ฟอร์มเขียนรีวิว */}
           <div className="mb-10 rounded-2xl border border-slate-700 bg-[#1a2330] p-5 md:p-7">
-
             {isLoggedIn ? (
               <ReviewForm
                 gameTitle={game.title}
@@ -560,7 +733,6 @@ function GameDetail() {
                 </Link>
               </div>
             )}
-
           </div>
 
           {/* รายการรีวิว */}
@@ -569,7 +741,13 @@ function GameDetail() {
               รีวิวทั้งหมด ({reviewCount})
             </h3>
 
-            <ReviewList items={reviews} />
+            {reviewLoading ? (
+              <p className="text-sm text-slate-400">
+                กำลังโหลดรีวิว...
+              </p>
+            ) : (
+              <ReviewList items={reviews} />
+            )}
           </div>
 
         </section>

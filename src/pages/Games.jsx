@@ -1,29 +1,39 @@
 
-import { useState } from 'react';
-import { games } from '../data/data';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { getGames } from '../api/backend';
+
+// แปลงข้อมูลเกมจาก Backend ให้หน้าเว็บใช้งานได้
+function normalizeGame(game) {
+  return {
+    ...game,
+    image: game.image || game.images?.cover || '',
+    price: Number(game.price ?? 0),
+    genre: Array.isArray(game.genre)
+      ? game.genre
+      : game.genre
+        ? [game.genre]
+        : [],
+    players: game.players || '',
+  };
+}
 
 // แปลงราคาเกม
 function getPrice(game) {
-  const prices = game.downloadLinks
-    ?.map((item) => item.price)
-    .filter((price) => typeof price === 'number');
+  const price = Number(game.price);
 
-  if (!prices?.length) return 'ไม่ระบุราคา';
+  if (!Number.isFinite(price)) return 'ไม่ระบุราคา';
 
-  const minPrice = Math.min(...prices);
-
-  return minPrice === 0
+  return price === 0
     ? 'ฟรี'
-    : `฿${minPrice.toLocaleString()}`;
+    : `฿${price.toLocaleString()}`;
 }
 
 // ใช้สำหรับเรียงราคาตัวเลข
 function getNumericPrice(game) {
-  const prices = game.downloadLinks
-    ?.map((item) => item.price)
-    .filter((price) => typeof price === 'number');
+  const price = Number(game.price);
 
-  return prices?.length ? Math.min(...prices) : Infinity;
+  return Number.isFinite(price) ? price : Infinity;
 }
 
 // การ์ดเกม
@@ -34,19 +44,22 @@ function GameCard({ game, isList = false }) {
         isList ? 'flex' : ''
       }`}
     >
-      <a
-        href={`/games/${game.id}`}
+      <Link
+        to={`/games/${game.id}`}
         className={isList ? 'flex w-full gap-4' : 'block'}
       >
         <div className={`overflow-hidden ${isList ? 'w-36 shrink-0' : ''}`}>
           <img
-            src={game.images?.cover}
+            src={game.image}
             alt={game.title}
             className={`object-cover transition duration-500 group-hover:scale-105 ${
               isList
                 ? 'h-full min-h-36 w-full'
                 : 'aspect-[4/3] w-full'
             }`}
+            onError={(e) => {
+              e.currentTarget.style.visibility = 'hidden';
+            }}
           />
         </div>
 
@@ -65,12 +78,16 @@ function GameCard({ game, isList = false }) {
             ♡
           </span>
         </div>
-      </a>
+      </Link>
     </div>
   );
 }
 
 function Games() {
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   const [query, setQuery] = useState('');
   const [genre, setGenre] = useState('all');
   const [players, setPlayers] = useState('all');
@@ -80,21 +97,61 @@ function Games() {
 
   const gamesPerPage = 6;
 
+  // ดึงข้อมูลเกมจาก Backend
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchGames() {
+      try {
+        setLoading(true);
+        setError('');
+
+        const items = await getGames();
+
+        if (!cancelled) {
+          setGames(
+            (items || []).map(normalizeGame)
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.message || 'ไม่สามารถโหลดข้อมูลเกมได้'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchGames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ประเภทเกมทั้งหมด
   const genres = [
-    ...new Set(games.flatMap((game) => game.genre || [])),
+    ...new Set(
+      games.flatMap((game) => game.genre || [])
+    ),
   ];
 
   // จำนวนผู้เล่นทั้งหมด
   const playerOptions = [
-    ...new Set(games.map((game) => game.players).filter(Boolean)),
+    ...new Set(
+      games.map((game) => game.players).filter(Boolean)
+    ),
   ];
 
   // ค้นหาและกรองเกม
   const filteredGames = games
     .filter((game) => {
       const matchName = game.title
-        .toLowerCase()
+        ?.toLowerCase()
         .includes(query.trim().toLowerCase());
 
       const matchGenre =
@@ -118,11 +175,13 @@ function Games() {
         return a.title.localeCompare(b.title);
       }
 
-      return (b.rating || 0) - (a.rating || 0);
+      return (Number(b.rating) || 0) - (Number(a.rating) || 0);
     });
 
   // แบ่งหน้า
-  const totalPages = Math.ceil(filteredGames.length / gamesPerPage);
+  const totalPages = Math.ceil(
+    filteredGames.length / gamesPerPage
+  );
 
   const shown = filteredGames.slice(
     (page - 1) * gamesPerPage,
@@ -133,6 +192,39 @@ function Games() {
   function changeFilter(callback, value) {
     callback(value);
     setPage(1);
+  }
+
+  // กำลังโหลด
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
+        <p className="text-lg text-slate-300">
+          กำลังโหลดข้อมูลเกม...
+        </p>
+      </main>
+    );
+  }
+
+  // โหลดข้อมูลไม่สำเร็จ
+  if (error) {
+    return (
+      <main className="min-h-screen bg-[#0b111b] px-5 py-20 text-center text-white">
+        <h1 className="text-2xl font-bold">
+          ไม่สามารถโหลดเกมได้ 😢
+        </h1>
+
+        <p className="mt-3 text-slate-400">
+          {error}
+        </p>
+
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-6 rounded-full bg-sky-500 px-6 py-3 font-semibold text-white hover:bg-sky-400"
+        >
+          ลองอีกครั้ง
+        </button>
+      </main>
+    );
   }
 
   return (
@@ -295,9 +387,11 @@ function Games() {
             <p className="text-lg font-semibold text-white">
               ไม่พบเกมที่ค้นหา
             </p>
+
             <p className="mt-2 text-sm text-slate-400">
               ลองเปลี่ยนคำค้นหาหรือตัวกรองเกมดูนะ
             </p>
+
             <button
               onClick={() => {
                 setQuery('');
