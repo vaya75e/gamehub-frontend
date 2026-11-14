@@ -1,7 +1,8 @@
 
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getGames } from '../api/backend';
+import useFavorites from '../hooks/useFavorites';
 
 // แปลงข้อมูลเกมจาก Backend ให้เข้ากับหน้า Home
 function normalizeGame(game) {
@@ -45,7 +46,7 @@ function getPrice(game) {
 }
 
 // Component การ์ดเกม
-function GameCard({ game, isNew = false }) {
+function GameCard({ game, isNew = false, favorite = false, onToggleFavorite }) {
   return (
     <Link
       to={`/games/${game.id}`}
@@ -81,7 +82,20 @@ function GameCard({ game, isNew = false }) {
             {getPrice(game)}
           </span>
 
-          <span className="text-xl text-gray-300">♡</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault(); // ไม่ให้เปิดหน้ารายละเอียดเกม
+              e.stopPropagation();
+              onToggleFavorite?.(game.id);
+            }}
+            className={`text-xl transition ${
+              favorite ? 'text-red-500' : 'text-gray-300 hover:text-red-400'
+            }`}
+            aria-label="รายการโปรด"
+          >
+            {favorite ? '♥' : '♡'}
+          </button>
         </div>
       </div>
     </Link>
@@ -110,6 +124,14 @@ function Home() {
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { isFavorite, toggle } = useFavorites();
+
+  // กดหัวใจ: ถ้ายังไม่ได้เข้าสู่ระบบให้ไปหน้า login
+  async function handleHeart(gameId) {
+    const result = await toggle(gameId);
+    if (result === 'login') navigate('/login');
+  }
 
   // ดึงข้อมูลเกมจาก Backend
   useEffect(() => {
@@ -246,6 +268,8 @@ const popular = [...games]
                   key={game.id}
                   game={game}
                   isNew
+                  favorite={isFavorite(game.id)}
+                  onToggleFavorite={handleHeart}
                 />
               ))}
             </div>
@@ -264,6 +288,8 @@ const popular = [...games]
                 <GameCard
                   key={game.id}
                   game={game}
+                  favorite={isFavorite(game.id)}
+                  onToggleFavorite={handleHeart}
                 />
               ))}
             </div>

@@ -1,7 +1,7 @@
-
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getGames } from '../api/backend';
+import useFavorites from '../hooks/useFavorites';
 
 // แปลงข้อมูลเกมจาก Backend ให้หน้าเว็บใช้งานได้
 function normalizeGame(game) {
@@ -90,7 +90,7 @@ function getNumericPrice(game) {
 }
 
 // การ์ดเกม
-function GameCard({ game, isList = false }) {
+function GameCard({ game, isList = false, favorite = false, onToggleFavorite }) {
   return (
     <div
       className={`group overflow-hidden rounded-xl border border-slate-700/70 bg-[#1a2330] transition hover:-translate-y-1 hover:border-sky-500 ${
@@ -134,9 +134,20 @@ function GameCard({ game, isList = false }) {
             </p>
           </div>
 
-          <span className="text-xl text-slate-300 transition hover:text-pink-400">
-            ♡
-          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault(); // ไม่ให้เปิดหน้ารายละเอียดเกม
+              e.stopPropagation();
+              onToggleFavorite?.(game.id);
+            }}
+            aria-label="รายการโปรด"
+            className={`text-xl transition ${
+              favorite ? 'text-red-500' : 'text-slate-300 hover:text-pink-400'
+            }`}
+          >
+            {favorite ? '♥' : '♡'}
+          </button>
         </div>
       </Link>
     </div>
@@ -156,6 +167,15 @@ function Games() {
   const [page, setPage] = useState(1);
 
   const gamesPerPage = 6;
+
+  const navigate = useNavigate();
+  const { isFavorite, toggle } = useFavorites();
+
+  // กดหัวใจ: ถ้ายังไม่ได้เข้าสู่ระบบให้ไปหน้า login
+  async function handleHeart(gameId) {
+    const result = await toggle(gameId);
+    if (result === 'login') navigate('/login');
+  }
 
   // ดึงข้อมูลเกมจาก Backend
   useEffect(() => {
@@ -426,6 +446,8 @@ function Games() {
                 key={game.id}
                 game={game}
                 isList={view === 'list'}
+                favorite={isFavorite(game.id)}
+                onToggleFavorite={handleHeart}
               />
             ))}
           </div>

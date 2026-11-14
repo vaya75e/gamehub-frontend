@@ -40,24 +40,44 @@ const getGenreText = (genre) => {
   return 'ไม่ระบุแนว';
 };
 
-function GameCard({ game }) {
+// favorite / onToggleFavorite เป็นตัวเลือก: ถ้าหน้าไหนไม่ส่งมา จะไม่แสดงปุ่มหัวใจ (หน้าเดิมไม่พัง)
+function GameCard({ game, favorite = false, onToggleFavorite }) {
   return (
     <Link
       to={`/games/${game.id}`}
       className="group block overflow-hidden rounded-xl border border-slate-700 bg-[#1a2330] transition hover:-translate-y-1 hover:border-sky-500"
     >
-      {game.images?.cover ? (
-        <img
-          src={game.images.cover}
-          alt={`รูปเกม ${game.title}`}
-          loading="lazy"
-          className="aspect-[4/3] w-full object-cover"
-        />
-      ) : (
-        <div className="grid aspect-[4/3] w-full place-items-center bg-slate-800 text-4xl">
-          🎮
-        </div>
-      )}
+      <div className="relative">
+        {game.images?.cover ? (
+          <img
+            src={game.images.cover}
+            alt={`รูปเกม ${game.title}`}
+            loading="lazy"
+            className="aspect-[4/3] w-full object-cover"
+          />
+        ) : (
+          <div className="grid aspect-[4/3] w-full place-items-center bg-slate-800 text-4xl">
+            🎮
+          </div>
+        )}
+
+        {onToggleFavorite && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault(); // ไม่ให้เปิดหน้ารายละเอียดเกม
+              e.stopPropagation();
+              onToggleFavorite(game.id);
+            }}
+            aria-label="รายการโปรด"
+            className={`absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-full bg-black/50 text-xl transition hover:bg-black/70 ${
+              favorite ? 'text-red-500' : 'text-white hover:text-red-400'
+            }`}
+          >
+            {favorite ? '♥' : '♡'}
+          </button>
+        )}
+      </div>
 
       <div className="p-3">
         <h3
