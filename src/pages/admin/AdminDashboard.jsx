@@ -4,9 +4,9 @@ import { useAuth } from '../../auth/AuthContext';
 
 function Stat({ label, value }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+    <div className="rounded-xl border border-slate-700 bg-[#1a2330] p-4">
+      <p className="text-sm text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-sky-400">{value}</p>
     </div>
   );
 }
@@ -24,7 +24,7 @@ function AdminDashboard() {
     return () => { ignore = true; };
   }, [token]);
 
-  if (error) return <p className="text-red-600">โหลดไม่สำเร็จ: {error.message}</p>;
+  if (error) return <p className="text-red-400">โหลดไม่สำเร็จ: {error.message}</p>;
   if (!stats) return <p className="text-slate-400">กำลังโหลด...</p>;
 
   return (
@@ -39,11 +39,11 @@ function AdminDashboard() {
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
         <section>
-          <h2 className="mb-2 font-semibold text-slate-900">สมาชิกใหม่ล่าสุด</h2>
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+          <h2 className="mb-2 font-bold text-white">สมาชิกใหม่ล่าสุด</h2>
+          <ul className="divide-y divide-slate-700 rounded-xl border border-slate-700 bg-[#1a2330]">
             {stats.newestMembers.map(m => (
               <li key={m.id} className="px-4 py-2 text-sm">
-                <span className="font-medium text-slate-800">{m.displayName}</span>
+                <span className="font-medium text-slate-100">{m.displayName}</span>
                 <span className="ml-2 text-slate-400">{m.email}</span>
               </li>
             ))}
@@ -51,13 +51,13 @@ function AdminDashboard() {
         </section>
 
         <section>
-          <h2 className="mb-2 font-semibold text-slate-900">เกมคะแนนสูงสุด</h2>
-          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+          <h2 className="mb-2 font-bold text-white">เกมคะแนนสูงสุด</h2>
+          <ul className="divide-y divide-slate-700 rounded-xl border border-slate-700 bg-[#1a2330]">
             {stats.topVoted.length === 0 && <li className="px-4 py-2 text-sm text-slate-400">ยังไม่มีโหวต</li>}
             {stats.topVoted.map(g => (
               <li key={g.id} className="flex justify-between px-4 py-2 text-sm">
-                <span className="text-slate-800">{g.title}</span>
-                <span className="text-slate-500">⭐ {g.voteAverage} ({g.voteCount})</span>
+                <span className="text-slate-100">{g.title}</span>
+                <span className="text-slate-400">⭐ {g.voteAverage} ({g.voteCount})</span>
               </li>
             ))}
           </ul>

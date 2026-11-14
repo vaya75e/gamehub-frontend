@@ -54,6 +54,10 @@ export async function getGenres() {
   const data = await apiFetch('/api/genres');
   return data.items;
 }
+export async function getPlayerModes() {
+  const data = await apiFetch('/api/player-modes');
+  return data.items;
+}
 
 // ---------- รีวิว ----------
 export async function getReviews(gameId) {
